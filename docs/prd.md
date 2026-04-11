@@ -1,4 +1,4 @@
-# 📄 Product Requirements Document (PRD): A11y-Matrix Ecosystem
+# 📄 Product Requirements Document (PRD): aria-palina Ecosystem
 
 > **Status:** Draft
 > **Last Updated:** 2026-04-11
@@ -17,7 +17,7 @@
 
 **"Visual noise off. Semantics on."**
 
-A11y-Matrixは、Webページの「視覚的な化粧（CSS）」を完全に剥ぎ取り、マシンと支援技術が解釈する真の構造である **「アクセシビリティツリー（AOM: Accessibility Object Model）」** を、開発者のターミナルやDevTools上に直接描き出します。
+aria-palinaは、Webページの「視覚的な化粧（CSS）」を完全に剥ぎ取り、マシンと支援技術が解釈する真の構造である **「アクセシビリティツリー（AOM: Accessibility Object Model）」** を、開発者のターミナルやDevTools上に直接描き出します。
 
 開発者がGUIのノイズに騙されることなく、コードのセマンティクスと論理的なナビゲーション順序のみに集中できる「究極のアクセシビリティ開発環境」を提供します。
 
@@ -44,7 +44,7 @@ A11y-Matrixは、Webページの「視覚的な化粧（CSS）」を完全に剥
 
 ## 4. 機能要件 (Functional Requirements)
 
-A11y-Matrixは、単一のツールではなく、開発のあらゆるフェーズに対応する「エコシステム」として以下の機能を提供します。
+aria-palinaは、単一のツールではなく、開発のあらゆるフェーズに対応する「エコシステム」として以下の機能を提供します。
 
 ### 4.1 CLI モード (One-shot Validation)
 
