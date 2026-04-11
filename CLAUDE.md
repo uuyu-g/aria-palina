@@ -92,6 +92,64 @@ describe("buildSpeechText", () => {
 - モックには `vi.fn()` を使い、型パラメータを使わず `as` キャストで
   型を当てるとシンプルになる (例: `vi.fn(async () => result) as ICDPClient["send"]`)。
 
+### 🏛️ 古典派 (Classicist) を第一選択とする
+
+**プロジェクト規約**: 単体テストは **Detroit / Chicago school (古典派)** を
+デフォルトとする。`vi.fn()` とスパイ検証 (`toHaveBeenCalled*`) を多用する
+Mockist (London school) スタイルは避ける。
+
+- **第一選択: 実装を直接呼び出す**
+  `@aria-palina/core` の中心は純粋関数 (`flattenAXTree`, `buildSpeechText` 等) で
+  ある。これらはダブルを一切使わず、入力 → 戻り値の比較だけでテストする。
+- **系の境界で必要な場合は fake を使う**
+  `ICDPClient` のような境界インターフェースは `vi.fn()` のモックではなく、
+  `class Fake...CDPClient implements ICDPClient` のような **動く偽実装** を
+  テスト内に置く。テストが検証するのは **公開 API の戻り値 (状態)** であり、
+  「どのメソッドが何回呼ばれたか」というインタラクションではない。
+- **相互作用検証は最後の手段**
+  `toHaveBeenCalledWith` や `spy` は、fake では再現しきれない副作用 (ログ、
+  テレメトリ、イベント発火順序など) を検証したいときだけに留める。
+
+#### ✅ 良い例 (古典派: fake + 状態検証)
+
+```ts
+class FakeCDPClient implements ICDPClient {
+  private readonly responses = new Map<string, unknown>();
+  setResponse<T>(method: string, result: T): void {
+    this.responses.set(method, result);
+  }
+  send<T = unknown>(method: string): Promise<T> {
+    if (!this.responses.has(method)) {
+      return Promise.reject(new Error(`FakeCDPClient: no response for ${method}`));
+    }
+    return Promise.resolve(this.responses.get(method) as T);
+  }
+  on(): void {}
+  off(): void {}
+}
+
+test("多段ツリーが DFS 順で平坦化される", async () => {
+  const client = new FakeCDPClient();
+  client.setResponse("Accessibility.getFullAXTree", { nodes: [...] });
+  const tree = await extractA11yTree(client);
+  expect(tree.map((n) => n.speechText)).toEqual(["[メイン]", "[ボタン] 送信"]);
+});
+```
+
+#### ❌ 悪い例 (Mockist: vi.fn + インタラクション検証)
+
+```ts
+test("calls Accessibility.getFullAXTree", async () => {
+  const cdp = {
+    send: vi.fn(async () => ({ nodes: [] })),
+    on: vi.fn(),
+    off: vi.fn(),
+  } as unknown as ICDPClient;
+  await extractA11yTree(cdp);
+  expect(cdp.send).toHaveBeenCalledWith("Accessibility.getFullAXTree"); // 実装詳細の検証
+});
+```
+
 ## 🏗️ アーキテクチャ不変条件
 
 - **`@aria-palina/core` は環境非依存 (pure TS)** を保つ。
