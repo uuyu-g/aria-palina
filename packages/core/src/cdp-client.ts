@@ -24,10 +24,7 @@ export interface ICDPClient {
    * );
    * ```
    */
-  send<TResult = unknown>(
-    method: string,
-    params?: Record<string, unknown>,
-  ): Promise<TResult>;
+  send<TResult = unknown>(method: string, params?: Record<string, unknown>): Promise<TResult>;
 
   /**
    * CDP イベントリスナーを登録する。
