@@ -70,7 +70,7 @@ aria-palinaは、単一のツールではなく、開発のあらゆるフェー
 
 ### 4.4 BDD Test Utilities (Automated Specs)
 
-- TUIで確認した「正しい読み上げ順序」を、CucumberやVitest等の自動テストとして記述できるアサーションライブラリを提供する（例: `expect(page).toHaveA11yTextSequence(...)`）。
+- TUIで確認した「正しい読み上げ順序」を、CucumberやVitest等の自動テストとして記述できるアサーションライブラリを提供する（例: `expect(page).toHavePalinaTextSequence(...)`）。
 
 ## 5. 非機能要件 (Non-Functional Requirements)
 
