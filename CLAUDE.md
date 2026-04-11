@@ -95,48 +95,60 @@ describe("buildSpeechText", () => {
 ### 🏛️ 古典派 (Classicist) を第一選択とする
 
 **プロジェクト規約**: 単体テストは **Detroit / Chicago school (古典派)** を
-デフォルトとする。`vi.fn()` とスパイ検証 (`toHaveBeenCalled*`) を多用する
+デフォルトとする。`vi.fn()` のスパイ検証 (`toHaveBeenCalled*`) を多用する
 Mockist (London school) スタイルは避ける。
 
-- **第一選択: 実装を直接呼び出す**
-  `@aria-palina/core` の中心は純粋関数 (`flattenAXTree`, `buildSpeechText` 等) で
-  ある。これらはダブルを一切使わず、入力 → 戻り値の比較だけでテストする。
-- **系の境界で必要な場合は fake を使う**
-  `ICDPClient` のような境界インターフェースは `vi.fn()` のモックではなく、
-  `class Fake...CDPClient implements ICDPClient` のような **動く偽実装** を
-  テスト内に置く。テストが検証するのは **公開 API の戻り値 (状態)** であり、
-  「どのメソッドが何回呼ばれたか」というインタラクションではない。
-- **相互作用検証は最後の手段**
-  `toHaveBeenCalledWith` や `spy` は、fake では再現しきれない副作用 (ログ、
-  テレメトリ、イベント発火順序など) を検証したいときだけに留める。
+#### 優先順位
 
-#### ✅ 良い例 (古典派: fake + 状態検証)
+1. **純粋関数は直接呼ぶ (ダブル不要)**
+   `@aria-palina/core` の中心は純粋関数 (`flattenAXTree`, `buildSpeechText` 等)。
+   これらはダブルを一切使わず、入力 → 戻り値の比較だけでテストする。
+2. **内部コラボレーションは古典派で書く**
+   同一パッケージ内のヘルパー・クラスは本物を組み合わせて実行し、
+   公開 API の戻り値 (状態) で振る舞いを検証する。内部オブジェクトを
+   `vi.fn()` で包むのは避ける。
+3. **外部境界 (`ICDPClient` 等) はモックでよい**
+   CDP / HTTP / fs / DB など**プロセスや実行環境をまたぐ境界**は、
+   `vi.fn()` ベースのシンプルなモックで決まった応答を返せばよい。
+   副作用の重い動くフェイクを作り込む必要はない。
+   ただしテストの関心は**引数 & 戻り値の状態**に置き、
+   `toHaveBeenCalledWith` のような**相互作用検証は最後の手段**に留める
+   (実装詳細に結合するため)。
+
+#### ✅ 良い例 (純粋関数の状態検証)
 
 ```ts
-class FakeCDPClient implements ICDPClient {
-  private readonly responses = new Map<string, unknown>();
-  setResponse<T>(method: string, result: T): void {
-    this.responses.set(method, result);
-  }
-  send<T = unknown>(method: string): Promise<T> {
-    if (!this.responses.has(method)) {
-      return Promise.reject(new Error(`FakeCDPClient: no response for ${method}`));
-    }
-    return Promise.resolve(this.responses.get(method) as T);
-  }
-  on(): void {}
-  off(): void {}
+describe("buildSpeechText", () => {
+  test("disabled=true の真偽値状態が『利用不可』として出力される", () => {
+    const text = buildSpeechText({
+      role: "button",
+      name: "送信",
+      properties: {},
+      state: { disabled: true },
+    });
+    expect(text).toBe("[ボタン] 送信 (利用不可)");
+  });
+});
+```
+
+#### ✅ 良い例 (外部境界は軽量モック、検証は戻り値)
+
+```ts
+function mockCDPClient(result: GetFullAXTreeResult): ICDPClient {
+  return {
+    send: vi.fn(async () => result) as ICDPClient["send"],
+    on: vi.fn(),
+    off: vi.fn(),
+  };
 }
 
 test("多段ツリーが DFS 順で平坦化される", async () => {
-  const client = new FakeCDPClient();
-  client.setResponse("Accessibility.getFullAXTree", { nodes: [...] });
-  const tree = await extractA11yTree(client);
+  const tree = await extractA11yTree(mockCDPClient({ nodes: [...] }));
   expect(tree.map((n) => n.speechText)).toEqual(["[メイン]", "[ボタン] 送信"]);
 });
 ```
 
-#### ❌ 悪い例 (Mockist: vi.fn + インタラクション検証)
+#### ❌ 悪い例 (相互作用検証で実装詳細に結合)
 
 ```ts
 test("calls Accessibility.getFullAXTree", async () => {
