@@ -1,0 +1,21 @@
+{
+  "name": "@aria-palina/core",
+  "version": "0.0.1",
+  "description": "aria-palina エコシステムの環境非依存コアエンジン。CDP クライアントを DI で受け取り、AOM 変換ロジックを提供する。",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "vp pack --dts --clean src/index.ts"
+  }
+}
