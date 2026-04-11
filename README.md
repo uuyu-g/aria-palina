@@ -7,3 +7,4 @@
 ## Documentation
 
 - [Product Requirements Document (PRD)](./docs/prd.md)
+- [Design Document (DD)](./docs/dd.md)
