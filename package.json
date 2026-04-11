@@ -1,0 +1,15 @@
+{
+  "name": "aria-palina-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "aria-palina Ecosystem — CSS の視覚的ノイズを剥ぎ取り、アクセシビリティツリー (AOM) をターミナル／DevTools 上に描き出すエコシステム",
+  "packageManager": "pnpm@9.12.3",
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r clean"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
