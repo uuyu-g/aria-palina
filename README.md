@@ -8,3 +8,4 @@
 
 - [Product Requirements Document (PRD)](./docs/prd.md)
 - [Design Document (DD)](./docs/dd.md)
+- [Use Cases / UX Simulations](./docs/usecases.md)
