@@ -3,7 +3,7 @@ import { describe, expect, test } from "vite-plus/test";
 import { buildSpeechText } from "../speech.js";
 
 describe("buildSpeechText", () => {
-  test("boolean state 'disabled' renders as 利用不可", () => {
+  test("disabled=true の真偽値状態が『利用不可』として出力される", () => {
     const text = buildSpeechText({
       role: "button",
       name: "送信",
@@ -13,7 +13,7 @@ describe("buildSpeechText", () => {
     expect(text).toBe("[ボタン] 送信 (利用不可)");
   });
 
-  test("heading appends the level number to the role label", () => {
+  test("heading は properties.level をロールラベル末尾に連結する", () => {
     const text = buildSpeechText({
       role: "heading",
       name: "概要",
@@ -23,7 +23,7 @@ describe("buildSpeechText", () => {
     expect(text).toBe("[見出し2] 概要");
   });
 
-  test("expanded combobox announces 展開", () => {
+  test("combobox で expanded=true のとき『展開』が発話される", () => {
     const text = buildSpeechText({
       role: "combobox",
       name: "国",
@@ -33,7 +33,7 @@ describe("buildSpeechText", () => {
     expect(text).toBe("[コンボボックス] 国 (展開)");
   });
 
-  test("empty name omits the name section entirely", () => {
+  test("name が空文字列のときはネームセクションを省略する", () => {
     const text = buildSpeechText({
       role: "button",
       name: "",
@@ -43,7 +43,7 @@ describe("buildSpeechText", () => {
     expect(text).toBe("[ボタン]");
   });
 
-  test("multiple states are joined with 、", () => {
+  test("複数状態は全角カンマ『、』で連結される", () => {
     const text = buildSpeechText({
       role: "button",
       name: "送信",
@@ -54,7 +54,7 @@ describe("buildSpeechText", () => {
     expect(text).toBe("[ボタン] 送信 (利用不可、押下)");
   });
 
-  test("expanded=false falls back to 折りたたみ label", () => {
+  test("expanded=false のとき『折りたたみ』ラベルへフォールバックする", () => {
     const text = buildSpeechText({
       role: "combobox",
       name: "国",
@@ -64,7 +64,7 @@ describe("buildSpeechText", () => {
     expect(text).toBe("[コンボボックス] 国 (折りたたみ)");
   });
 
-  test("disabled=false is silent (no off label defined)", () => {
+  test("off ラベル未定義の状態 (disabled=false) は沈黙する", () => {
     const text = buildSpeechText({
       role: "button",
       name: "送信",
@@ -74,7 +74,7 @@ describe("buildSpeechText", () => {
     expect(text).toBe("[ボタン] 送信");
   });
 
-  test("unknown role falls through as raw string", () => {
+  test("辞書に無い role は生の文字列のまま表示される", () => {
     const text = buildSpeechText({
       role: "customwidget",
       name: "X",
@@ -84,7 +84,7 @@ describe("buildSpeechText", () => {
     expect(text).toBe("[customwidget] X");
   });
 
-  test("heading without level stays as '見出し'", () => {
+  test("level プロパティの無い heading は『見出し』のまま出力される", () => {
     const text = buildSpeechText({
       role: "heading",
       name: "概要",

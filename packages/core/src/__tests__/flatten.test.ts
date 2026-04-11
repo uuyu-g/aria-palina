@@ -9,7 +9,7 @@ function node(partial: Partial<RawAXNode> & Pick<RawAXNode, "nodeId" | "ignored"
 }
 
 describe("flattenAXTree", () => {
-  test("single root node is returned with depth 0", () => {
+  test("単一ルートノードは depth 0 で返される", () => {
     const result = flattenAXTree([
       node({
         nodeId: "1",
@@ -24,7 +24,7 @@ describe("flattenAXTree", () => {
     expect(result[0]?.name).toBe("メイン");
   });
 
-  test("assigns increasing depth through nested childIds", () => {
+  test("childIds を辿るたびに depth がインクリメントされる", () => {
     const result = flattenAXTree([
       node({
         nodeId: "root",
@@ -54,7 +54,7 @@ describe("flattenAXTree", () => {
     ]);
   });
 
-  test("skips ignored nodes and their entire subtree", () => {
+  test("ignored ノードとその子孫サブツリー全体をスキップする", () => {
     const result = flattenAXTree([
       node({
         nodeId: "root",
@@ -89,7 +89,7 @@ describe("flattenAXTree", () => {
     expect(result.find((n) => n.name === "見えない")).toBeUndefined();
   });
 
-  test("partitions properties into structural vs state buckets", () => {
+  test("properties を構造系／状態系の 2 つのバケットへ分離する", () => {
     const result = flattenAXTree([
       node({
         nodeId: "h",
@@ -112,7 +112,7 @@ describe("flattenAXTree", () => {
     expect(only?.speechText).toBe("[見出し2] 概要");
   });
 
-  test("orphan nodes (parentId pointing nowhere) are treated as roots", () => {
+  test("親が存在しない孤児ノード (parentId が無効) はルート扱いになる", () => {
     const result = flattenAXTree([
       node({
         nodeId: "orphan",
@@ -127,7 +127,7 @@ describe("flattenAXTree", () => {
     expect(result[0]?.name).toBe("孤児");
   });
 
-  test("backendDOMNodeId falls back to 0 when absent", () => {
+  test("backendDOMNodeId が無いときは 0 にフォールバックする", () => {
     const result = flattenAXTree([
       node({
         nodeId: "1",
@@ -147,7 +147,7 @@ describe("flattenAXTree", () => {
     expect(result[1]?.backendNodeId).toBe(42);
   });
 
-  test("does not revisit duplicated child references", () => {
+  test("childIds に同一子が重複していても再訪問しない", () => {
     const result = flattenAXTree([
       node({
         nodeId: "root",

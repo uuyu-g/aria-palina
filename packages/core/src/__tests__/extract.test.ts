@@ -14,7 +14,7 @@ function createMockCDPClient(result: GetFullAXTreeResult): ICDPClient {
 }
 
 describe("extractA11yTree", () => {
-  test("calls Accessibility.getFullAXTree via ICDPClient.send", async () => {
+  test("ICDPClient.send 経由で Accessibility.getFullAXTree を呼び出す", async () => {
     const nodes: RawAXNode[] = [
       {
         nodeId: "1",
@@ -33,13 +33,13 @@ describe("extractA11yTree", () => {
     expect(tree[0]?.speechText).toBe("[メイン] メイン");
   });
 
-  test("returns an empty array when CDP responds with no nodes", async () => {
+  test("CDP が空の nodes を返したときは空配列を返す", async () => {
     const cdp = createMockCDPClient({ nodes: [] });
     const tree = await extractA11yTree(cdp);
     expect(tree).toEqual([]);
   });
 
-  test("flattens a multi-level tree through the adapter", async () => {
+  test("アダプター経由で多段ツリーを正しく平坦化する", async () => {
     const cdp = createMockCDPClient({
       nodes: [
         {
