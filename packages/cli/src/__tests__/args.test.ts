@@ -122,4 +122,31 @@ describe("parseCliArgs", () => {
       args: expect.objectContaining({ headed: true }),
     });
   });
+
+  test("--help は exitCode 0 でヘルプ文を返す", () => {
+    const result = parseCliArgs(["--help"]);
+    expect(result).toEqual({
+      ok: false,
+      exitCode: 0,
+      message: expect.stringContaining("aria-palina-cli"),
+    });
+  });
+
+  test("-h は --help のエイリアスとして動作する", () => {
+    const result = parseCliArgs(["-h"]);
+    expect(result).toEqual({
+      ok: false,
+      exitCode: 0,
+      message: expect.stringContaining("使い方"),
+    });
+  });
+
+  test("--version は exitCode 0 でバージョン文字列を返す", () => {
+    const result = parseCliArgs(["--version"]);
+    expect(result).toEqual({
+      ok: false,
+      exitCode: 0,
+      message: expect.stringContaining("0.0.1"),
+    });
+  });
 });

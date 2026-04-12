@@ -54,16 +54,52 @@ describe("flattenAXTree", () => {
     ]);
   });
 
-  test("ignored ノードとその子孫サブツリー全体をスキップする", () => {
+  test("ignored ノードは透過的にスキップされ、子ノードが親に繰り上がる", () => {
     const result = flattenAXTree([
       node({
         nodeId: "root",
         ignored: false,
         role: { type: "role", value: "main" },
-        childIds: ["hidden", "visible"],
+        childIds: ["transparent", "visible"],
       }),
       node({
-        nodeId: "hidden",
+        nodeId: "transparent",
+        parentId: "root",
+        ignored: true,
+        role: { type: "role", value: "none" },
+        childIds: ["promoted"],
+      }),
+      node({
+        nodeId: "promoted",
+        parentId: "transparent",
+        ignored: false,
+        role: { type: "role", value: "button" },
+        name: { type: "computedString", value: "繰り上がり" },
+      }),
+      node({
+        nodeId: "visible",
+        parentId: "root",
+        ignored: false,
+        role: { type: "role", value: "button" },
+        name: { type: "computedString", value: "見える" },
+      }),
+    ]);
+    // ignored ノード自体は出力に含まれないが、その子は繰り上がる
+    expect(result.map((n) => n.name)).toEqual(["", "繰り上がり", "見える"]);
+    // 繰り上がった子は ignored ノードの depth を消費しない (親と同じ depth)
+    expect(result.map((n) => n.depth)).toEqual([0, 1, 1]);
+  });
+
+  test("aria-hidden 相当のサブツリーは子孫も個別に ignored なので全体がスキップされる", () => {
+    const result = flattenAXTree([
+      node({
+        nodeId: "root",
+        ignored: false,
+        role: { type: "role", value: "main" },
+        childIds: ["ariaHidden", "visible"],
+      }),
+      node({
+        nodeId: "ariaHidden",
         parentId: "root",
         ignored: true,
         role: { type: "role", value: "region" },
@@ -71,8 +107,8 @@ describe("flattenAXTree", () => {
       }),
       node({
         nodeId: "hiddenChild",
-        parentId: "hidden",
-        ignored: false,
+        parentId: "ariaHidden",
+        ignored: true,
         role: { type: "role", value: "button" },
         name: { type: "computedString", value: "見えない" },
       }),
@@ -85,7 +121,6 @@ describe("flattenAXTree", () => {
       }),
     ]);
     expect(result.map((n) => n.name)).toEqual(["", "見える"]);
-    // ignored ノードの子孫は配列に現れない。
     expect(result.find((n) => n.name === "見えない")).toBeUndefined();
   });
 

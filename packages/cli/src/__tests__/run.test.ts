@@ -141,6 +141,23 @@ describe("runCli", () => {
     expect(stderr.value).toContain("CDP connection failed");
   });
 
+  test("--help は exitCode:0 で stdout にヘルプを出力する", async () => {
+    const stdout = createWritableBuffer();
+    const stderr = createWritableBuffer();
+    const { factory } = fakeBrowserFactory();
+
+    const code = await runCli(["--help"], {
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      isTTY: false,
+      browserFactory: factory,
+    });
+
+    expect(code).toBe(0);
+    expect(stdout.value).toContain("aria-palina-cli");
+    expect(stderr.value).toBe("");
+  });
+
   test("URL 未指定は exitCode:2 を返す", async () => {
     const stdout = createWritableBuffer();
     const stderr = createWritableBuffer();

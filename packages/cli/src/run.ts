@@ -49,8 +49,9 @@ export async function runCli(argv: readonly string[], io?: Partial<RunIO>): Prom
 
   const parsed = parseCliArgs(argv);
   if (!parsed.ok) {
-    stderr.write(parsed.message + "\n");
-    return 2;
+    const target = parsed.exitCode === 0 ? stdout : stderr;
+    target.write(parsed.message + "\n");
+    return parsed.exitCode;
   }
 
   const { args } = parsed;

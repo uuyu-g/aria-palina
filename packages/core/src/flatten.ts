@@ -72,7 +72,12 @@ function readString(value: RawAXValue | undefined): string {
  */
 function readStateValue(value: RawAXValue): boolean | string {
   if (typeof value.value === "boolean") return value.value;
-  if (typeof value.value === "string") return value.value;
+  if (typeof value.value === "string") {
+    // CDP が token 型で "true"/"false" を返す場合がある (例: invalid)。
+    if (value.value === "true") return true;
+    if (value.value === "false") return false;
+    return value.value;
+  }
   if (value.value === undefined || value.value === null) return false;
   return String(value.value);
 }
@@ -133,10 +138,11 @@ function projectNode(raw: RawAXNode, depth: number): A11yNode {
  * CDP 形式の AX ツリーを平坦化して `A11yNode[]` を返す。
  *
  * ### ignored の扱い
- * `ignored: true` のノードは**自身も子孫も**出力配列に含めない。これは
- * NVDA 等のスクリーンリーダーが実際に読み上げる内容に近い表現を得るため
- * (DD §2.2 参照)。`role="presentation"` / `aria-hidden="true"` などで
- * ignore マークされたサブツリーは完全に無視される。
+ * `ignored: true` のノードは出力配列に含めないが、子ノードは引き続き辿る。
+ * ignored ノードは「透過的」であり、depth を消費しない。子は親の depth を
+ * 継承する。`aria-hidden="true"` の場合は Chrome が子孫にも個別に
+ * `ignored: true` を付与するため、ノード単位のチェックだけで正しく
+ * サブツリー全体がスキップされる。
  *
  * ### 孤児ノード
  * `parentId` が指す親が `nodes` 内に存在しない (= 孤児) ノードは、ルート
@@ -167,8 +173,19 @@ export function flattenAXTree(rawNodes: readonly RawAXNode[]): A11yNode[] {
     if (visited.has(node.nodeId)) return;
     visited.add(node.nodeId);
 
-    // ignored の場合、自身も子孫も配列に含めない。
-    if (node.ignored) return;
+    if (node.ignored) {
+      // ignored ノードは出力配列に含めないが、子ノードは辿る。
+      // ignored ノードは透過的 (depth を消費しない) なので、同じ depth を
+      // 子に渡す。aria-hidden="true" の場合は Chrome が子孫にも個別に
+      // ignored: true を付けるため、ノード単位のチェックだけで正しく動作する。
+      if (!node.childIds) return;
+      for (const childId of node.childIds) {
+        const child = byId.get(childId);
+        if (!child) continue;
+        visit(child, depth);
+      }
+      return;
+    }
 
     result.push(projectNode(node, depth));
 
