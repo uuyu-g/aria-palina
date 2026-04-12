@@ -135,6 +135,26 @@ function projectNode(raw: RawAXNode, depth: number): A11yNode {
 }
 
 /**
+ * Chrome 内部ロールのうち、スクリーンリーダーが読み上げない描画用ノード。
+ * これらは `filter: true` 時に無条件で除外する。
+ */
+const NOISE_ROLES = new Set(["InlineTextBox", "ListMarker"]);
+
+/** `flattenAXTree` の動作を制御するオプション。 */
+export interface FlattenOptions {
+  /**
+   * `true` (デフォルト) の場合、NVDA が読み上げない内部ロールのノードを
+   * 出力から除外する。
+   *
+   * 除外対象:
+   * - `InlineTextBox` — Chrome 内部の描画用ノード
+   * - `ListMarker` — リストマーカー (•, 1. 等)
+   * - `StaticText` — 親要素の `name` と同一テキストを持つ冗長ノード
+   */
+  filter?: boolean;
+}
+
+/**
  * CDP 形式の AX ツリーを平坦化して `A11yNode[]` を返す。
  *
  * ### ignored の扱い
@@ -144,6 +164,10 @@ function projectNode(raw: RawAXNode, depth: number): A11yNode {
  * `ignored: true` を付与するため、ノード単位のチェックだけで正しく
  * サブツリー全体がスキップされる。
  *
+ * ### ノイズフィルタリング (filter オプション)
+ * `filter: true` (デフォルト) の場合、NVDA が読み上げない Chrome 内部ロールの
+ * ノードを出力から除外する。`filter: false` で生ツリーをそのまま取得可能。
+ *
  * ### 孤児ノード
  * `parentId` が指す親が `nodes` 内に存在しない (= 孤児) ノードは、ルート
  * として独立に扱い、`depth: 0` から走査する。
@@ -152,7 +176,10 @@ function projectNode(raw: RawAXNode, depth: number): A11yNode {
  * CDP 応答は稀に循環 or 重複を含むことがあるため、`Set<nodeId>` で訪問済み
  * を管理し、同一ノードを二度訪問しないようにする。
  */
-export function flattenAXTree(rawNodes: readonly RawAXNode[]): A11yNode[] {
+export function flattenAXTree(
+  rawNodes: readonly RawAXNode[],
+  options?: FlattenOptions,
+): A11yNode[] {
   const byId = new Map<string, RawAXNode>();
   for (const node of rawNodes) {
     byId.set(node.nodeId, node);
@@ -166,6 +193,7 @@ export function flattenAXTree(rawNodes: readonly RawAXNode[]): A11yNode[] {
     }
   }
 
+  const shouldFilter = options?.filter !== false;
   const result: A11yNode[] = [];
   const visited = new Set<string>();
 
@@ -185,6 +213,24 @@ export function flattenAXTree(rawNodes: readonly RawAXNode[]): A11yNode[] {
         visit(child, depth);
       }
       return;
+    }
+
+    const role = readString(node.role);
+
+    // --- ノイズフィルタリング ---
+    if (shouldFilter) {
+      // InlineTextBox / ListMarker は無条件で除外
+      if (NOISE_ROLES.has(role)) return;
+
+      // StaticText は親の name と同一テキストなら冗長として除外
+      if (role === "StaticText" && node.parentId) {
+        const parent = byId.get(node.parentId);
+        if (parent) {
+          const parentName = readString(parent.name);
+          const nodeName = readString(node.name);
+          if (nodeName !== "" && nodeName === parentName) return;
+        }
+      }
     }
 
     result.push(projectNode(node, depth));

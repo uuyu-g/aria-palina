@@ -199,4 +199,219 @@ describe("flattenAXTree", () => {
     ]);
     expect(result).toHaveLength(2);
   });
+
+  describe("ノイズフィルタリング", () => {
+    test("InlineTextBox ロールのノードはデフォルトで除外される", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "btn",
+          ignored: false,
+          role: { type: "role", value: "button" },
+          name: { type: "computedString", value: "送信" },
+          childIds: ["txt", "itb"],
+        }),
+        node({
+          nodeId: "txt",
+          parentId: "btn",
+          ignored: false,
+          role: { type: "role", value: "StaticText" },
+          name: { type: "computedString", value: "送信" },
+          childIds: ["itb"],
+        }),
+        node({
+          nodeId: "itb",
+          parentId: "txt",
+          ignored: false,
+          role: { type: "role", value: "InlineTextBox" },
+          name: { type: "computedString", value: "送信" },
+        }),
+      ]);
+      expect(result.map((n) => n.role)).toEqual(["button"]);
+    });
+
+    test("ListMarker ロールのノードはデフォルトで除外される", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "list",
+          ignored: false,
+          role: { type: "role", value: "list" },
+          childIds: ["item"],
+        }),
+        node({
+          nodeId: "item",
+          ignored: false,
+          parentId: "list",
+          role: { type: "role", value: "listitem" },
+          name: { type: "computedString", value: "項目" },
+          childIds: ["marker"],
+        }),
+        node({
+          nodeId: "marker",
+          parentId: "item",
+          ignored: false,
+          role: { type: "role", value: "ListMarker" },
+          name: { type: "computedString", value: "• " },
+        }),
+      ]);
+      expect(result.map((n) => n.role)).toEqual(["list", "listitem"]);
+    });
+
+    test("StaticText は親の name と同一テキストの場合のみ除外される", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "link",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          name: { type: "computedString", value: "ホーム" },
+          childIds: ["dup", "extra"],
+        }),
+        node({
+          nodeId: "dup",
+          parentId: "link",
+          ignored: false,
+          role: { type: "role", value: "StaticText" },
+          name: { type: "computedString", value: "ホーム" }, // 親と同じ → 除外
+        }),
+        node({
+          nodeId: "extra",
+          parentId: "link",
+          ignored: false,
+          role: { type: "role", value: "StaticText" },
+          name: { type: "computedString", value: "（新着）" }, // 親と違う → 残る
+        }),
+      ]);
+      expect(result.map((n) => n.role)).toEqual(["link", "StaticText"]);
+      expect(result.map((n) => n.name)).toEqual(["ホーム", "（新着）"]);
+    });
+
+    test("filter: false を指定すると全ノードがそのまま出力される", () => {
+      const result = flattenAXTree(
+        [
+          node({
+            nodeId: "heading",
+            ignored: false,
+            role: { type: "role", value: "heading" },
+            name: { type: "computedString", value: "タイトル" },
+            childIds: ["st", "itb"],
+          }),
+          node({
+            nodeId: "st",
+            parentId: "heading",
+            ignored: false,
+            role: { type: "role", value: "StaticText" },
+            name: { type: "computedString", value: "タイトル" },
+            childIds: ["itb"],
+          }),
+          node({
+            nodeId: "itb",
+            parentId: "st",
+            ignored: false,
+            role: { type: "role", value: "InlineTextBox" },
+            name: { type: "computedString", value: "タイトル" },
+          }),
+        ],
+        { filter: false },
+      );
+      expect(result.map((n) => n.role)).toEqual(["heading", "StaticText", "InlineTextBox"]);
+    });
+
+    test("見出し・リンク・ボタンの典型的なツリーがクリーンに出力される", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "h1",
+          ignored: false,
+          role: { type: "role", value: "heading" },
+          name: { type: "computedString", value: "aria-palina テスト" },
+          childIds: ["h1-st"],
+          properties: [{ name: "level", value: { type: "integer", value: 1 } }],
+        }),
+        node({
+          nodeId: "h1-st",
+          parentId: "h1",
+          ignored: false,
+          role: { type: "role", value: "StaticText" },
+          name: { type: "computedString", value: "aria-palina テスト" },
+          childIds: ["h1-itb"],
+        }),
+        node({
+          nodeId: "h1-itb",
+          parentId: "h1-st",
+          ignored: false,
+          role: { type: "role", value: "InlineTextBox" },
+          name: { type: "computedString", value: "aria-palina テスト" },
+        }),
+        node({
+          nodeId: "link",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          name: { type: "computedString", value: "ホーム" },
+          childIds: ["link-st"],
+        }),
+        node({
+          nodeId: "link-st",
+          parentId: "link",
+          ignored: false,
+          role: { type: "role", value: "StaticText" },
+          name: { type: "computedString", value: "ホーム" },
+          childIds: ["link-itb"],
+        }),
+        node({
+          nodeId: "link-itb",
+          parentId: "link-st",
+          ignored: false,
+          role: { type: "role", value: "InlineTextBox" },
+          name: { type: "computedString", value: "ホーム" },
+        }),
+        node({
+          nodeId: "btn",
+          ignored: false,
+          role: { type: "role", value: "button" },
+          name: { type: "computedString", value: "送信" },
+          childIds: ["btn-st"],
+        }),
+        node({
+          nodeId: "btn-st",
+          parentId: "btn",
+          ignored: false,
+          role: { type: "role", value: "StaticText" },
+          name: { type: "computedString", value: "送信" },
+          childIds: ["btn-itb"],
+        }),
+        node({
+          nodeId: "btn-itb",
+          parentId: "btn-st",
+          ignored: false,
+          role: { type: "role", value: "InlineTextBox" },
+          name: { type: "computedString", value: "送信" },
+        }),
+      ]);
+      // 冗長な StaticText / InlineTextBox がすべて除去される
+      expect(result.map((n) => n.speechText)).toEqual([
+        "[見出し1] aria-palina テスト",
+        "[リンク] ホーム",
+        "[ボタン] 送信",
+      ]);
+    });
+
+    test("空文字の StaticText は親と name が一致しても除外しない", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "p",
+          ignored: false,
+          role: { type: "role", value: "paragraph" },
+          name: { type: "computedString", value: "" },
+          childIds: ["st"],
+        }),
+        node({
+          nodeId: "st",
+          parentId: "p",
+          ignored: false,
+          role: { type: "role", value: "StaticText" },
+          name: { type: "computedString", value: "" },
+        }),
+      ]);
+      // 両方 name が空文字 → 冗長判定しない (name !== "" の条件で保護)
+      expect(result).toHaveLength(2);
+    });
+  });
 });
