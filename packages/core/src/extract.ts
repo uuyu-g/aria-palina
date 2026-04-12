@@ -16,14 +16,17 @@
 
 import type { GetFullAXTreeResult } from "./ax-protocol.js";
 import type { ICDPClient } from "./cdp-client.js";
-import { flattenAXTree } from "./flatten.js";
+import { flattenAXTree, type FlattenOptions } from "./flatten.js";
 import type { A11yNode } from "./types.js";
 
 /**
  * 注入された `ICDPClient` を使って現在のページの AOM を抽出し、
  * 平坦化された `A11yNode[]` を返す。
  */
-export async function extractA11yTree(cdp: ICDPClient): Promise<A11yNode[]> {
+export async function extractA11yTree(
+  cdp: ICDPClient,
+  options?: FlattenOptions,
+): Promise<A11yNode[]> {
   const { nodes } = await cdp.send<GetFullAXTreeResult>("Accessibility.getFullAXTree");
-  return flattenAXTree(nodes);
+  return flattenAXTree(nodes, options);
 }
