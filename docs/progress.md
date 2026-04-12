@@ -108,6 +108,46 @@ export { extractA11yTree } from "./extract.js";
 Phase 3 以降の `@aria-palina/cli` / `@aria-palina/tui` / `@aria-palina/extension`
 はこの公開 API のみに依存することで DI の境界を維持する。
 
+## テーブル出力の改善 (CLI / TUI)
+
+### 実装済み: CLI テーブルコンテキスト (Core)
+
+`flattenAXTree` の後処理として `enrichTableContext` を追加し、テーブル系ノード
+の `speechText` に位置情報・列ヘッダー名を自動付与するようにした。
+
+**出力例:**
+
+| ロール | Before | After |
+| ------ | ------ | ----- |
+| table | `[テーブル]` | `[テーブル 3行×4列] ユーザー一覧` |
+| columnheader | `[列見出し] 権限` | `[列見出し 3/4] 権限` |
+| cell | `[セル] 管理者` | `[セル 3/4, 権限] 管理者` |
+
+これにより `docs/usecases.md` §1.1 の「理想形」が CLI で実現される。
+
+### 将来計画: TUI でのテーブル表示
+
+TUI (Phase 4 以降) では、CLI とは異なる **2段階の情報密度** を検討する。
+
+| 表示場所 | 情報密度 | 出力例 |
+| -------- | -------- | ------ |
+| **TUI 一覧** | コンパクト (ヘッダー名のみ) | `[セル, 権限] 管理者` |
+| **TUI 詳細ペイン** | フル (位置+ヘッダー名+テーブルメタ) | `[セル 3/4, 権限] 管理者` + テーブル名、行列数等 |
+
+**設計方針:**
+
+- 一覧では位置番号 (`3/4`) を省いて行を短く保つが、列ヘッダー名は残す。
+  理由: ヘッダー名が無いと `[セル]` の羅列になり、テーブル構造の問題を
+  一覧スキャンで発見できなくなるため。
+- 詳細ペインではカーソル位置のノードについて NVDA 完全シミュレーションを
+  表示する。行位置 (`tableRowIndex`) も含めたフル情報を出す。
+- Core の `A11yNode.properties` には `tableRowIndex` / `tableColIndex` /
+  `tableRowCount` / `tableColCount` / `tableColumnHeader` が既に格納されて
+  いるため、TUI 側はこれらを参照して表示密度を切り替えるだけで済む。
+- TUI 一覧用に `speechText` とは別の簡潔表記を生成する関数を
+  `@aria-palina/tui` 側に用意するか、`buildSpeechText` に verbosity オプション
+  を追加するかは Phase 4 着手時に決定する。
+
 ## Phase 3 実装メモ
 
 ### スコープ
