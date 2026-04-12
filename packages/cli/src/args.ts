@@ -1,5 +1,27 @@
 import { parseArgs } from "node:util";
 
+const HELP_TEXT = `aria-palina-cli — ページのアクセシビリティツリーを NVDA 風テキストで出力する
+
+使い方:
+  aria-palina-cli [options] <url>
+
+オプション:
+  -u, --url <URL>    対象 URL (位置引数でも可)
+  -f, --format <fmt> 出力形式: "text" (デフォルト) | "json"
+      --indent       インデント出力を強制 (デフォルト: TTY なら有効)
+      --no-indent    インデントなし出力を強制
+      --color        カラー出力を強制 (デフォルト: TTY なら有効)
+      --no-color     カラーなし出力を強制
+      --headed       ブラウザを表示して実行
+      --tui          TUI モードで起動 (未実装)
+  -h, --help         このヘルプを表示
+  -V, --version      バージョンを表示
+
+例:
+  aria-palina-cli https://example.com
+  aria-palina-cli --format json https://example.com
+  aria-palina-cli --no-color --no-indent https://example.com | grep ボタン`;
+
 export interface CliArgs {
   url: string;
   headed: boolean;
@@ -9,7 +31,10 @@ export interface CliArgs {
   tui: boolean;
 }
 
-export type ParseResult = { ok: true; args: CliArgs } | { ok: false; exitCode: 2; message: string };
+export type ParseResult =
+  | { ok: true; args: CliArgs }
+  | { ok: false; exitCode: 0; message: string }
+  | { ok: false; exitCode: 2; message: string };
 
 export function parseCliArgs(argv: readonly string[]): ParseResult {
   let parsed: ReturnType<typeof parseArgs>;
@@ -26,6 +51,8 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
         color: { type: "boolean" },
         "no-color": { type: "boolean" },
         tui: { type: "boolean", default: false },
+        help: { type: "boolean", short: "h", default: false },
+        version: { type: "boolean", short: "V", default: false },
       },
     });
   } catch (e) {
@@ -37,6 +64,22 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
   }
 
   const { values, positionals } = parsed;
+
+  if (values.help) {
+    return {
+      ok: false,
+      exitCode: 0,
+      message: HELP_TEXT,
+    };
+  }
+
+  if (values.version) {
+    return {
+      ok: false,
+      exitCode: 0,
+      message: "aria-palina-cli 0.0.1",
+    };
+  }
 
   const url = (values.url as string | undefined) ?? positionals[0];
   if (!url) {

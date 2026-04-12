@@ -23,6 +23,6 @@
   },
   "dependencies": {
     "@aria-palina/core": "workspace:*",
-    "playwright-core": "^1.52.0"
+    "playwright-core": "~1.56.0"
   }
 }
