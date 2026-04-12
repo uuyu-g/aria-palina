@@ -13,6 +13,9 @@ describe("parseCliArgs", () => {
         indent: undefined,
         color: undefined,
         tui: false,
+        wait: "network-idle",
+        idleTime: 500,
+        timeout: 30000,
       },
     });
   });
@@ -147,6 +150,81 @@ describe("parseCliArgs", () => {
       ok: false,
       exitCode: 0,
       message: expect.stringContaining("0.0.1"),
+    });
+  });
+
+  test("--wait のデフォルト値は network-idle になる", () => {
+    const result = parseCliArgs(["-u", "https://example.com"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ wait: "network-idle" }),
+    });
+  });
+
+  test("--wait none でネットワーク待機が無効になる", () => {
+    const result = parseCliArgs(["-u", "https://example.com", "--wait", "none"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ wait: "none" }),
+    });
+  });
+
+  test("-w エイリアスが --wait として解釈される", () => {
+    const result = parseCliArgs(["-u", "https://example.com", "-w", "none"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ wait: "none" }),
+    });
+  });
+
+  test("不正な --wait 値はエラーを返す", () => {
+    const result = parseCliArgs(["-u", "https://example.com", "--wait", "invalid"]);
+    expect(result).toEqual({
+      ok: false,
+      exitCode: 2,
+      message: expect.stringContaining("invalid"),
+    });
+  });
+
+  test("--idle-time で静穏時間を指定できる", () => {
+    const result = parseCliArgs(["-u", "https://example.com", "--idle-time", "1000"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ idleTime: 1000 }),
+    });
+  });
+
+  test("--idle-time に数値以外を指定するとエラーになる", () => {
+    const result = parseCliArgs(["-u", "https://example.com", "--idle-time", "abc"]);
+    expect(result).toEqual({
+      ok: false,
+      exitCode: 2,
+      message: expect.stringContaining("--idle-time"),
+    });
+  });
+
+  test("--timeout で最大待機時間を指定できる", () => {
+    const result = parseCliArgs(["-u", "https://example.com", "--timeout", "60000"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ timeout: 60000 }),
+    });
+  });
+
+  test("-t エイリアスが --timeout として解釈される", () => {
+    const result = parseCliArgs(["-u", "https://example.com", "-t", "10000"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ timeout: 10000 }),
+    });
+  });
+
+  test("--timeout に負の値を指定するとエラーになる", () => {
+    const result = parseCliArgs(["-u", "https://example.com", "--timeout", "-1"]);
+    expect(result).toEqual({
+      ok: false,
+      exitCode: 2,
+      message: expect.stringContaining("--timeout"),
     });
   });
 });

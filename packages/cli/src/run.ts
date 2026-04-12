@@ -1,4 +1,4 @@
-import { extractA11yTree } from "@aria-palina/core";
+import { extractA11yTree, waitForNetworkIdle } from "@aria-palina/core";
 import { parseCliArgs } from "./args.js";
 import { formatJsonOutput, formatTextOutput } from "./formatter.js";
 import type { MinimalCDPSession } from "./playwright-cdp-adapter.js";
@@ -69,6 +69,14 @@ export async function runCli(argv: readonly string[], io?: Partial<RunIO>): Prom
     handle = await browserFactory({ headed: args.headed });
     const session = await handle.newCDPSessionForUrl(args.url);
     const adapter = adaptCDPSession(session);
+
+    if (args.wait === "network-idle") {
+      await waitForNetworkIdle(adapter, {
+        idleTime: args.idleTime,
+        timeout: args.timeout,
+      });
+    }
+
     const nodes = await extractA11yTree(adapter);
 
     const output =
