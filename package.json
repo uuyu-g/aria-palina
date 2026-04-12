@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "aria-palina Ecosystem — CSS の視覚的ノイズを剥ぎ取り、アクセシビリティツリー (AOM) をターミナル／DevTools 上に描き出すエコシステム",
+  "type": "module",
   "scripts": {
     "build": "vp run -F './packages/*' build",
     "check": "vp check",
