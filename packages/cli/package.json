@@ -1,0 +1,28 @@
+{
+  "name": "@aria-palina/cli",
+  "version": "0.0.1",
+  "description": "aria-palina ワンショット CLI。Playwright 経由で AOM を取得し、NVDA 風のテキストを stdout に出力する。",
+  "bin": {
+    "aria-palina-cli": "./dist/bin.mjs"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "vp pack --dts --clean src/index.ts src/bin.ts"
+  },
+  "dependencies": {
+    "@aria-palina/core": "workspace:*",
+    "playwright-core": "^1.52.0"
+  }
+}
