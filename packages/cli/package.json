@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "description": "aria-palina ワンショット CLI。Playwright 経由で AOM を取得し、NVDA 風のテキストを stdout に出力する。",
   "bin": {
-    "aria-palina-cli": "./dist/bin.mjs"
+    "palina": "./dist/bin.mjs"
   },
   "files": [
     "dist",

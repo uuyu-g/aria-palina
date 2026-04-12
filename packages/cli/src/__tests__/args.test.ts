@@ -128,7 +128,7 @@ describe("parseCliArgs", () => {
     expect(result).toEqual({
       ok: false,
       exitCode: 0,
-      message: expect.stringContaining("aria-palina-cli"),
+      message: expect.stringContaining("palina"),
     });
   });
 

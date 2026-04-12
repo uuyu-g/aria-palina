@@ -154,7 +154,7 @@ describe("runCli", () => {
     });
 
     expect(code).toBe(0);
-    expect(stdout.value).toContain("aria-palina-cli");
+    expect(stdout.value).toContain("palina");
     expect(stderr.value).toBe("");
   });
 
