@@ -144,6 +144,46 @@ describe("buildSpeechText", () => {
     expect(text).toBe("[セル] 値");
   });
 
+  test("slider に valuenow/valuemax があるとき値が出力される", () => {
+    const text = buildSpeechText({
+      role: "slider",
+      name: "音量",
+      properties: { valuenow: 50, valuemax: 100 },
+      state: {},
+    });
+    expect(text).toBe("[スライダー 50/100] 音量");
+  });
+
+  test("progressbar に valuenow のみのとき値だけ出力される", () => {
+    const text = buildSpeechText({
+      role: "progressbar",
+      name: "読込中",
+      properties: { valuenow: 75 },
+      state: {},
+    });
+    expect(text).toBe("[プログレスバー 75] 読込中");
+  });
+
+  test("meter に valuetext があるとき valuetext が優先される", () => {
+    const text = buildSpeechText({
+      role: "meter",
+      name: "CPU",
+      properties: { valuenow: 85, valuemax: 100, valuetext: "85%" },
+      state: {},
+    });
+    expect(text).toBe("[メーター 85%] CPU");
+  });
+
+  test("slider に値プロパティが無いときはロールラベルのみ", () => {
+    const text = buildSpeechText({
+      role: "slider",
+      name: "音量",
+      properties: {},
+      state: {},
+    });
+    expect(text).toBe("[スライダー] 音量");
+  });
+
   test("grid / gridcell でもテーブル書式が適用される", () => {
     const grid = buildSpeechText({
       role: "grid",
