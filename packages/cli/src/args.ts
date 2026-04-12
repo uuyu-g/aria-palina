@@ -14,6 +14,9 @@ const HELP_TEXT = `palina — ページのアクセシビリティツリーを N
       --no-color     カラーなし出力を強制
       --headed       ブラウザを表示して実行
       --tui          TUI モードで起動 (未実装)
+  -w, --wait <strategy>  待機戦略: "network-idle" (デフォルト) | "none"
+      --idle-time <ms>   ネットワークアイドル判定の静穏時間 (デフォルト: 500)
+  -t, --timeout <ms>     最大待機時間 (デフォルト: 30000)
   -h, --help         このヘルプを表示
   -V, --version      バージョンを表示
 
@@ -29,6 +32,9 @@ export interface CliArgs {
   indent: boolean | undefined;
   color: boolean | undefined;
   tui: boolean;
+  wait: "none" | "network-idle";
+  idleTime: number;
+  timeout: number;
 }
 
 export type ParseResult =
@@ -51,6 +57,9 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
         color: { type: "boolean" },
         "no-color": { type: "boolean" },
         tui: { type: "boolean", default: false },
+        wait: { type: "string", short: "w", default: "network-idle" },
+        "idle-time": { type: "string", default: "500" },
+        timeout: { type: "string", short: "t", default: "30000" },
         help: { type: "boolean", short: "h", default: false },
         version: { type: "boolean", short: "V", default: false },
       },
@@ -99,6 +108,35 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
     };
   }
 
+  const wait = values.wait as string;
+  if (wait !== "none" && wait !== "network-idle") {
+    return {
+      ok: false,
+      exitCode: 2,
+      message: `不正な --wait 値: "${wait}"。"network-idle" または "none" を指定してください。`,
+    };
+  }
+
+  const idleTimeRaw = values["idle-time"] as string;
+  const idleTime = Number(idleTimeRaw);
+  if (!Number.isFinite(idleTime) || idleTime < 0) {
+    return {
+      ok: false,
+      exitCode: 2,
+      message: `不正な --idle-time 値: "${idleTimeRaw}"。0 以上の数値を指定してください。`,
+    };
+  }
+
+  const timeoutRaw = values.timeout as string;
+  const timeout = Number(timeoutRaw);
+  if (!Number.isFinite(timeout) || timeout <= 0) {
+    return {
+      ok: false,
+      exitCode: 2,
+      message: `不正な --timeout 値: "${timeoutRaw}"。正の数値を指定してください。`,
+    };
+  }
+
   const hasIndent = values.indent as boolean | undefined;
   const hasNoIndent = values["no-indent"] as boolean | undefined;
   let indent: boolean | undefined;
@@ -138,6 +176,9 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
       indent,
       color,
       tui: (values.tui as boolean) ?? false,
+      wait,
+      idleTime,
+      timeout,
     },
   };
 }

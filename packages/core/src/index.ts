@@ -4,3 +4,4 @@ export type { GetFullAXTreeResult, RawAXNode, RawAXProperty, RawAXValue } from "
 export { flattenAXTree, type FlattenOptions } from "./flatten.js";
 export { buildSpeechText, type SpeechInput } from "./speech.js";
 export { extractA11yTree } from "./extract.js";
+export { waitForNetworkIdle, type NetworkIdleOptions } from "./wait-for-network-idle.js";
