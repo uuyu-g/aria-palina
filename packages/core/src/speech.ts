@@ -129,20 +129,62 @@ export interface SpeechInput {
   state: Record<string, boolean | string>;
 }
 
+/** テーブルのセル系ロール。位置情報・列ヘッダー名の付与対象。 */
+const TABLE_CELL_ROLES = new Set(["cell", "gridcell", "columnheader", "rowheader"]);
+
 /**
  * role (＋ heading level のような構造系プロパティ) を日本語ラベルへ変換する。
  *
- * `heading` のみ特殊で `properties.level` を末尾に付けて "見出し2" のように
- * する。辞書にない role はそのまま表示する (デバッグ容易性のため)。
+ * - `heading`: `properties.level` を末尾に連結 → "見出し2"
+ * - `table` / `grid`: 行列数を付与 → "テーブル 3行×4列"
+ * - `cell` / `gridcell`: 列位置＋ヘッダー名 → "セル 3/4, 権限"
+ * - `columnheader` / `rowheader`: 列位置 → "列見出し 1/4"
+ *
+ * 辞書にない role はそのまま表示する (デバッグ容易性のため)。
  */
 function formatRoleLabel(role: string, properties: Record<string, unknown>): string {
   const base = ROLE_LABELS[role] ?? role;
+
   if (role === "heading") {
     const level = properties["level"];
     if (typeof level === "number" && Number.isFinite(level)) {
       return `${base}${level}`;
     }
+    return base;
   }
+
+  // Table / Grid: テーブル 3行×4列
+  if (role === "table" || role === "grid") {
+    const rowCount = properties["tableRowCount"];
+    const colCount = properties["tableColCount"];
+    if (typeof rowCount === "number" && typeof colCount === "number") {
+      return `${base} ${rowCount}行×${colCount}列`;
+    }
+    return base;
+  }
+
+  // Cell-like roles: セル 3/4, 権限 | 列見出し 1/4
+  if (TABLE_CELL_ROLES.has(role)) {
+    const colIndex = properties["tableColIndex"];
+    const colCount = properties["tableColCount"];
+    const header = properties["tableColumnHeader"];
+
+    const hasPosition = typeof colIndex === "number" && typeof colCount === "number";
+    const hasHeader =
+      typeof header === "string" && header.length > 0 && (role === "cell" || role === "gridcell");
+
+    if (!hasPosition && !hasHeader) return base;
+
+    let label = base;
+    if (hasPosition) {
+      label += ` ${colIndex}/${colCount}`;
+    }
+    if (hasHeader) {
+      label += `, ${header}`;
+    }
+    return label;
+  }
+
   return base;
 }
 

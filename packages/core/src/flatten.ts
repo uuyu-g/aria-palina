@@ -15,6 +15,7 @@
 
 import type { RawAXNode, RawAXProperty, RawAXValue } from "./ax-protocol.js";
 import { buildSpeechText } from "./speech.js";
+import { enrichTableContext } from "./table-context.js";
 import type { A11yNode } from "./types.js";
 
 /**
@@ -246,6 +247,9 @@ export function flattenAXTree(
   for (const root of roots) {
     visit(root, 0);
   }
+
+  // テーブル系ノードに列位置・ヘッダー名・行列数を付与
+  enrichTableContext(result);
 
   return result;
 }
