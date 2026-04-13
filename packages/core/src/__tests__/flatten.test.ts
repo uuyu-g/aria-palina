@@ -393,7 +393,7 @@ describe("flattenAXTree", () => {
       ]);
     });
 
-    test("空文字の StaticText は親と name が一致しても除外しない", () => {
+    test("空文字の StaticText は空白ノイズとして除外される", () => {
       const result = flattenAXTree([
         node({
           nodeId: "p",
@@ -410,8 +410,151 @@ describe("flattenAXTree", () => {
           name: { type: "computedString", value: "" },
         }),
       ]);
-      // 両方 name が空文字 → 冗長判定しない (name !== "" の条件で保護)
+      // 空の StaticText は読み上げ内容がないため除外
+      expect(result).toHaveLength(1);
+    });
+
+    test("空白のみの StaticText は除外される", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "nav",
+          ignored: false,
+          role: { type: "role", value: "navigation" },
+          name: { type: "computedString", value: "メイン" },
+          childIds: ["link1", "ws", "link2"],
+        }),
+        node({
+          nodeId: "link1",
+          parentId: "nav",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          name: { type: "computedString", value: "ホーム" },
+        }),
+        node({
+          nodeId: "ws",
+          parentId: "nav",
+          ignored: false,
+          role: { type: "role", value: "StaticText" },
+          name: { type: "computedString", value: "  " },
+        }),
+        node({
+          nodeId: "link2",
+          parentId: "nav",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          name: { type: "computedString", value: "製品" },
+        }),
+      ]);
+      expect(result.map((n) => n.speechText)).toEqual([
+        "[ナビゲーション] メイン",
+        "[リンク] ホーム",
+        "[リンク] 製品",
+      ]);
+    });
+
+    test("名前なし generic は透過的に子を辿る", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "main",
+          ignored: false,
+          role: { type: "role", value: "main" },
+          name: { type: "computedString", value: "" },
+          childIds: ["div"],
+        }),
+        node({
+          nodeId: "div",
+          parentId: "main",
+          ignored: false,
+          role: { type: "role", value: "generic" },
+          name: { type: "computedString", value: "" },
+          childIds: ["btn"],
+        }),
+        node({
+          nodeId: "btn",
+          parentId: "div",
+          ignored: false,
+          role: { type: "role", value: "button" },
+          name: { type: "computedString", value: "送信" },
+        }),
+      ]);
+      // generic は透過的: 出力されず、子 (button) は main の depth + 1 になる
       expect(result).toHaveLength(2);
+      expect(result[0]!.speechText).toBe("[メイン]");
+      expect(result[1]!.speechText).toBe("[ボタン] 送信");
+      expect(result[1]!.depth).toBe(1);
+    });
+
+    test("名前付き generic はグループとして表示される", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "root",
+          ignored: false,
+          role: { type: "role", value: "main" },
+          name: { type: "computedString", value: "" },
+          childIds: ["div"],
+        }),
+        node({
+          nodeId: "div",
+          parentId: "root",
+          ignored: false,
+          role: { type: "role", value: "generic" },
+          name: { type: "computedString", value: "セクション" },
+          childIds: ["btn"],
+        }),
+        node({
+          nodeId: "btn",
+          parentId: "div",
+          ignored: false,
+          role: { type: "role", value: "button" },
+          name: { type: "computedString", value: "送信" },
+        }),
+      ]);
+      // 名前付き generic はグループとして出力される
+      expect(result).toHaveLength(3);
+      expect(result[1]!.speechText).toBe("[グループ] セクション");
+      expect(result[1]!.depth).toBe(1);
+      expect(result[2]!.depth).toBe(2);
+    });
+
+    test("rowgroup は透過的に子を辿る", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "table",
+          ignored: false,
+          role: { type: "role", value: "table" },
+          name: { type: "computedString", value: "" },
+          childIds: ["rg"],
+        }),
+        node({
+          nodeId: "rg",
+          parentId: "table",
+          ignored: false,
+          role: { type: "role", value: "rowgroup" },
+          name: { type: "computedString", value: "" },
+          childIds: ["row"],
+        }),
+        node({
+          nodeId: "row",
+          parentId: "rg",
+          ignored: false,
+          role: { type: "role", value: "row" },
+          name: { type: "computedString", value: "" },
+          childIds: ["cell"],
+        }),
+        node({
+          nodeId: "cell",
+          parentId: "row",
+          ignored: false,
+          role: { type: "role", value: "cell" },
+          name: { type: "computedString", value: "値" },
+        }),
+      ]);
+      // rowgroup は透過的: table → row → cell の depth が連続する
+      expect(result.map((n) => [n.role, n.depth])).toEqual([
+        ["table", 0],
+        ["row", 1],
+        ["cell", 2],
+      ]);
     });
   });
 });

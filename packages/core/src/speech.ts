@@ -100,6 +100,18 @@ const ROLE_LABELS: Record<string, string> = {
   subscript: "下付き",
   superscript: "上付き",
   time: "時刻",
+  // Chrome 内部ロール (日本語ラベル化)
+  rowgroup: "行グループ",
+  MenuListPopup: "メニューリスト",
+  Legend: "凡例",
+  Figcaption: "図キャプション",
+  LineBreak: "改行",
+  // 追加ウィジェットロール
+  scrollbar: "スクロールバー",
+  feed: "フィード",
+  directory: "ディレクトリ",
+  presentation: "プレゼンテーション",
+  none: "なし",
 };
 
 /**
@@ -183,6 +195,23 @@ function formatRoleLabel(role: string, properties: Record<string, unknown>): str
       label += `, ${header}`;
     }
     return label;
+  }
+
+  // Slider / Progressbar / Meter: 値表示
+  if (role === "slider" || role === "progressbar" || role === "meter") {
+    const valuetext = properties["valuetext"];
+    if (typeof valuetext === "string" && valuetext.length > 0) {
+      return `${base} ${valuetext}`;
+    }
+    const valuenow = properties["valuenow"];
+    if (typeof valuenow === "number" && Number.isFinite(valuenow)) {
+      const valuemax = properties["valuemax"];
+      if (typeof valuemax === "number" && Number.isFinite(valuemax)) {
+        return `${base} ${valuenow}/${valuemax}`;
+      }
+      return `${base} ${valuenow}`;
+    }
+    return base;
   }
 
   return base;

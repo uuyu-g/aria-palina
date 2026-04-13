@@ -137,9 +137,19 @@ function projectNode(raw: RawAXNode, depth: number): A11yNode {
 
 /**
  * Chrome 内部ロールのうち、スクリーンリーダーが読み上げない描画用ノード。
- * これらは `filter: true` 時に無条件で除外する。
+ * これらは `filter: true` 時にサブツリーごと除外する (子も不要)。
  */
 const NOISE_ROLES = new Set(["InlineTextBox", "ListMarker"]);
+
+/**
+ * NVDA が読み上げない構造ロール。ノード自体は出力しないが、子ノードは
+ * 親の depth を引き継いで走査する (透過的)。
+ *
+ * - `generic` — `<div>` / `<span>` 等の意味を持たないコンテナ。
+ *   ただし `name` が付与されている場合は表示する。
+ * - `rowgroup` — `<thead>` / `<tbody>` / `<tfoot>` のラッパー。
+ */
+const TRANSPARENT_ROLES = new Set(["generic", "rowgroup"]);
 
 /** `flattenAXTree` の動作を制御するオプション。 */
 export interface FlattenOptions {
@@ -220,8 +230,14 @@ export function flattenAXTree(
 
     // --- ノイズフィルタリング ---
     if (shouldFilter) {
-      // InlineTextBox / ListMarker は無条件で除外
+      // InlineTextBox / ListMarker は無条件で除外 (子も不要)
       if (NOISE_ROLES.has(role)) return;
+
+      // 空白のみの StaticText は除外 (リンク間のホワイトスペース等)
+      if (role === "StaticText") {
+        const nodeName = readString(node.name);
+        if (nodeName.trim() === "") return;
+      }
 
       // StaticText は親の name と同一テキストなら冗長として除外
       if (role === "StaticText" && node.parentId) {
@@ -230,6 +246,25 @@ export function flattenAXTree(
           const parentName = readString(parent.name);
           const nodeName = readString(node.name);
           if (nodeName !== "" && nodeName === parentName) return;
+        }
+      }
+
+      // generic (名前なし) / rowgroup は透過的に子を辿る (depth を消費しない)
+      if (TRANSPARENT_ROLES.has(role)) {
+        const nodeName = readString(node.name);
+        // 名前が付いている generic はグループとして表示する
+        if (role === "generic" && nodeName.length > 0) {
+          // fall through to normal projection
+        } else {
+          // 透過: ノード自体を出力せず、子を同じ depth で辿る
+          if (node.childIds) {
+            for (const childId of node.childIds) {
+              const child = byId.get(childId);
+              if (!child) continue;
+              visit(child, depth);
+            }
+          }
+          return;
         }
       }
     }
