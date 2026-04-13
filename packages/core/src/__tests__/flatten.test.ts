@@ -139,7 +139,7 @@ describe("flattenAXTree", () => {
     expect(only?.properties).toEqual({ level: 2 });
     expect(only?.state).toEqual({ focusable: true, disabled: false });
     expect(only?.isFocusable).toBe(true);
-    expect(only?.speechText).toBe("[見出し2] 概要");
+    expect(only?.speechText).toBe("[heading2] 概要");
   });
 
   test("親が存在しない孤児ノード (parentId が無効) はルート扱いになる", () => {
@@ -382,9 +382,9 @@ describe("flattenAXTree", () => {
       ]);
       // 冗長な StaticText / InlineTextBox がすべて除去される
       expect(result.map((n) => n.speechText)).toEqual([
-        "[見出し1] aria-palina テスト",
-        "[リンク] ホーム",
-        "[ボタン] 送信",
+        "[heading1] aria-palina テスト",
+        "[link] ホーム",
+        "[button] 送信",
       ]);
     });
 
@@ -441,9 +441,9 @@ describe("flattenAXTree", () => {
         }),
       ]);
       expect(result.map((n) => n.speechText)).toEqual([
-        "[ナビゲーション] メイン",
-        "[リンク] ホーム",
-        "[リンク] 製品",
+        "[navigation] メイン",
+        "[link] ホーム",
+        "[link] 製品",
       ]);
     });
 
@@ -474,8 +474,8 @@ describe("flattenAXTree", () => {
       ]);
       // generic は透過的: 出力されず、子 (button) は main の depth + 1 になる
       expect(result).toHaveLength(2);
-      expect(result[0]!.speechText).toBe("[メイン]");
-      expect(result[1]!.speechText).toBe("[ボタン] 送信");
+      expect(result[0]!.speechText).toBe("[main]");
+      expect(result[1]!.speechText).toBe("[button] 送信");
       expect(result[1]!.depth).toBe(1);
     });
 
@@ -506,7 +506,7 @@ describe("flattenAXTree", () => {
       ]);
       // 名前付き generic はグループとして出力される
       expect(result).toHaveLength(3);
-      expect(result[1]!.speechText).toBe("[グループ] セクション");
+      expect(result[1]!.speechText).toBe("[generic] セクション");
       expect(result[1]!.depth).toBe(1);
       expect(result[2]!.depth).toBe(2);
     });

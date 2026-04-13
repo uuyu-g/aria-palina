@@ -61,7 +61,7 @@
 
 **プロジェクト規約**: `test(...)` / `it(...)` に渡す説明文字列は **日本語** で書くこと。
 
-- 理由: `aria-palina` のドメイン (NVDA 発話テキスト、ARIA role の日本語ラベル等)
+- 理由: `aria-palina` のドメイン (NVDA 発話テキスト、ARIA state の日本語ラベル等)
   は日本語の語彙で思考されており、仕様書 (`docs/*.md`) も全て日本語のため、
   テストの意図が読み手に最短距離で伝わる。
 - `describe(...)` のグルーピング名は **実装シンボル名** (例: `buildSpeechText`,
@@ -87,7 +87,7 @@ describe("buildSpeechText", () => {
 
 ### アサーションの書き方
 
-- 文字列比較は `toBe` を使う (`expect(text).toBe("[ボタン] 送信")`)。
+- 文字列比較は `toBe` を使う (`expect(text).toBe("[button] 送信")`)。
 - 構造比較は `toEqual` を使う。`toMatchObject` は必要最小限。
 - モックには `vi.fn()` を使い、型パラメータを使わず `as` キャストで
   型を当てるとシンプルになる (例: `vi.fn(async () => result) as ICDPClient["send"]`)。
@@ -126,7 +126,7 @@ describe("buildSpeechText", () => {
       properties: {},
       state: { disabled: true },
     });
-    expect(text).toBe("[ボタン] 送信 (利用不可)");
+    expect(text).toBe("[button] 送信 (利用不可)");
   });
 });
 ```
@@ -144,7 +144,7 @@ function mockCDPClient(result: GetFullAXTreeResult): ICDPClient {
 
 test("多段ツリーが DFS 順で平坦化される", async () => {
   const tree = await extractA11yTree(mockCDPClient({ nodes: [...] }));
-  expect(tree.map((n) => n.speechText)).toEqual(["[メイン]", "[ボタン] 送信"]);
+  expect(tree.map((n) => n.speechText)).toEqual(["[main]", "[button] 送信"]);
 });
 ```
 
