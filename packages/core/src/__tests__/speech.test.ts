@@ -201,4 +201,62 @@ describe("buildSpeechText", () => {
     });
     expect(gridcell).toBe("[グリッドセル 1/3, 列A] A1");
   });
+
+  test("menuitemcheckbox が日本語ラベル『メニューチェック項目』で出力される", () => {
+    const text = buildSpeechText({
+      role: "menuitemcheckbox",
+      name: "自動保存",
+      properties: {},
+      state: { checked: true },
+    });
+    expect(text).toBe("[メニューチェック項目] 自動保存 (チェック)");
+  });
+
+  test("menuitemradio が日本語ラベル『メニューラジオ項目』で出力される", () => {
+    const on = buildSpeechText({
+      role: "menuitemradio",
+      name: "ライト",
+      properties: {},
+      state: { checked: true },
+    });
+    expect(on).toBe("[メニューラジオ項目] ライト (チェック)");
+
+    const off = buildSpeechText({
+      role: "menuitemradio",
+      name: "ダーク",
+      properties: {},
+      state: { checked: false },
+    });
+    expect(off).toBe("[メニューラジオ項目] ダーク (未チェック)");
+  });
+
+  test("radiogroup が日本語ラベル『ラジオグループ』で出力される", () => {
+    const text = buildSpeechText({
+      role: "radiogroup",
+      name: "配送方法",
+      properties: {},
+      state: {},
+    });
+    expect(text).toBe("[ラジオグループ] 配送方法");
+  });
+
+  test("roledescription が指定されているときロールラベルを上書きする", () => {
+    const text = buildSpeechText({
+      role: "group",
+      name: "お知らせ",
+      properties: { roledescription: "カルーセル" },
+      state: {},
+    });
+    expect(text).toBe("[カルーセル] お知らせ");
+  });
+
+  test("roledescription が空文字列のとき通常のロールラベルにフォールバックする", () => {
+    const text = buildSpeechText({
+      role: "group",
+      name: "設定",
+      properties: { roledescription: "" },
+      state: {},
+    });
+    expect(text).toBe("[グループ] 設定");
+  });
 });

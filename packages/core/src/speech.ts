@@ -112,6 +112,11 @@ const ROLE_LABELS: Record<string, string> = {
   directory: "ディレクトリ",
   presentation: "プレゼンテーション",
   none: "なし",
+  // メニュー系複合ロール
+  menuitemcheckbox: "メニューチェック項目",
+  menuitemradio: "メニューラジオ項目",
+  // グループ系ロール
+  radiogroup: "ラジオグループ",
 };
 
 /**
@@ -155,6 +160,12 @@ const TABLE_CELL_ROLES = new Set(["cell", "gridcell", "columnheader", "rowheader
  * 辞書にない role はそのまま表示する (デバッグ容易性のため)。
  */
 function formatRoleLabel(role: string, properties: Record<string, unknown>): string {
+  // roledescription が指定されている場合、ロールラベルを上書きする (WAI-ARIA 仕様)。
+  const roledescription = properties["roledescription"];
+  if (typeof roledescription === "string" && roledescription.length > 0) {
+    return roledescription;
+  }
+
   const base = ROLE_LABELS[role] ?? role;
 
   if (role === "heading") {

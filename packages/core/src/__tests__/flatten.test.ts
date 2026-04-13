@@ -552,4 +552,37 @@ describe("flattenAXTree", () => {
       ]);
     });
   });
+
+  describe("roledescription の mojibake 修復", () => {
+    test("二重 UTF-8 エンコードされた roledescription が正しく修復される", () => {
+      // "カルーセル" の UTF-8 bytes を Latin-1 として解釈した文字列
+      const mojibake =
+        "\u00e3\u0082\u00ab\u00e3\u0083\u00ab\u00e3\u0083\u00bc\u00e3\u0082\u00bb\u00e3\u0083\u00ab";
+      const result = flattenAXTree([
+        node({
+          nodeId: "1",
+          ignored: false,
+          role: { type: "role", value: "group" },
+          name: { type: "computedString", value: "お知らせ" },
+          properties: [{ name: "roledescription", value: { type: "string", value: mojibake } }],
+        }),
+      ]);
+      expect(result[0]?.properties["roledescription"]).toBe("カルーセル");
+      expect(result[0]?.speechText).toBe("[カルーセル] お知らせ");
+    });
+
+    test("正常な ASCII roledescription はそのまま保持される", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "1",
+          ignored: false,
+          role: { type: "role", value: "group" },
+          name: { type: "computedString", value: "slides" },
+          properties: [{ name: "roledescription", value: { type: "string", value: "carousel" } }],
+        }),
+      ]);
+      expect(result[0]?.properties["roledescription"]).toBe("carousel");
+      expect(result[0]?.speechText).toBe("[carousel] slides");
+    });
+  });
 });

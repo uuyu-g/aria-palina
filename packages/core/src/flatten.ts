@@ -83,9 +83,39 @@ function readStateValue(value: RawAXValue): boolean | string {
   return String(value.value);
 }
 
+/**
+ * CDP が返す文字列プロパティの二重 UTF-8 エンコード (mojibake) を修復する。
+ *
+ * Chromium CDP は `aria-roledescription` 等の非 ASCII 属性値を
+ * UTF-8 バイト列 → Latin-1 解釈 → UTF-8 再エンコードという経路で
+ * 二重エンコードすることがある。この関数はそのパターンを検知し修復する。
+ */
+function repairMojibake(str: string): string {
+  // Latin-1 supplement (U+00C0–U+00FF) を含まなければ mojibake ではない
+  if (!/[\xc0-\xff]/.test(str)) return str;
+  try {
+    const bytes = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) {
+      const code = str.charCodeAt(i);
+      if (code > 0xff) return str; // BMP 外の文字があれば非 mojibake
+      bytes[i] = code;
+    }
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return str;
+  }
+}
+
+/** 文字列値を含みうる構造系プロパティ。mojibake 修復の対象。 */
+const TEXT_STRUCTURAL_KEYS = new Set(["roledescription", "keyshortcuts", "valuetext"]);
+
 /** `RawAXValue` を構造系プロパティ向けに素の値として読む。 */
-function readStructuralValue(value: RawAXValue): unknown {
-  return value.value;
+function readStructuralValue(name: string, value: RawAXValue): unknown {
+  const v = value.value;
+  if (typeof v === "string" && TEXT_STRUCTURAL_KEYS.has(name)) {
+    return repairMojibake(v);
+  }
+  return v;
 }
 
 /**
@@ -103,7 +133,7 @@ function partitionProperties(raw: readonly RawAXProperty[] | undefined): {
     if (STATE_PROPERTY_KEYS.has(prop.name)) {
       state[prop.name] = readStateValue(prop.value);
     } else if (STRUCTURAL_PROPERTY_KEYS.has(prop.name)) {
-      properties[prop.name] = readStructuralValue(prop.value);
+      properties[prop.name] = readStructuralValue(prop.name, prop.value);
     }
     // それ以外は捨てる (名前衝突・将来対応予定)。
   }
