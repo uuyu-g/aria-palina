@@ -89,7 +89,7 @@ describe("enrichTableContext (via flattenAXTree)", () => {
   test("テーブルノードに行列数が付与される", () => {
     const result = flattenAXTree(buildBasicTableNodes());
     const table = result.find((n) => n.role === "table");
-    expect(table?.speechText).toBe("[テーブル 2行×3列] ユーザー一覧");
+    expect(table?.speechText).toBe("[table 2行×3列] ユーザー一覧");
     expect(table?.properties).toMatchObject({
       tableRowCount: 2,
       tableColCount: 3,
@@ -100,9 +100,9 @@ describe("enrichTableContext (via flattenAXTree)", () => {
     const result = flattenAXTree(buildBasicTableNodes());
     const cells = result.filter((n) => n.role === "cell");
     expect(cells.map((c) => c.speechText)).toEqual([
-      "[セル 1/3, 名前] 田中太郎",
-      "[セル 2/3, メール] tanaka@example.com",
-      "[セル 3/3, 権限] 管理者",
+      "[cell 1/3, 名前] 田中太郎",
+      "[cell 2/3, メール] tanaka@example.com",
+      "[cell 3/3, 権限] 管理者",
     ]);
   });
 
@@ -110,9 +110,9 @@ describe("enrichTableContext (via flattenAXTree)", () => {
     const result = flattenAXTree(buildBasicTableNodes());
     const headers = result.filter((n) => n.role === "columnheader");
     expect(headers.map((h) => h.speechText)).toEqual([
-      "[列見出し 1/3] 名前",
-      "[列見出し 2/3] メール",
-      "[列見出し 3/3] 権限",
+      "[columnheader 1/3] 名前",
+      "[columnheader 2/3] メール",
+      "[columnheader 3/3] 権限",
     ]);
   });
 
@@ -160,7 +160,7 @@ describe("enrichTableContext (via flattenAXTree)", () => {
     ];
     const result = flattenAXTree(nodes);
     const cells = result.filter((n) => n.role === "cell");
-    expect(cells.map((c) => c.speechText)).toEqual(["[セル 1/2] A", "[セル 2/2] B"]);
+    expect(cells.map((c) => c.speechText)).toEqual(["[cell 1/2] A", "[cell 2/2] B"]);
     expect(cells[0]?.properties).not.toHaveProperty("tableColumnHeader");
   });
 
@@ -188,8 +188,8 @@ describe("enrichTableContext (via flattenAXTree)", () => {
     const result = flattenAXTree(nodes);
     const heading = result.find((n) => n.role === "heading");
     const button = result.find((n) => n.role === "button");
-    expect(heading?.speechText).toBe("[見出し1] タイトル");
-    expect(button?.speechText).toBe("[ボタン] 送信");
+    expect(heading?.speechText).toBe("[heading1] タイトル");
+    expect(button?.speechText).toBe("[button] 送信");
   });
 
   test("grid / gridcell でもテーブルコンテキストが解決される", () => {
@@ -223,9 +223,9 @@ describe("enrichTableContext (via flattenAXTree)", () => {
       }),
     ];
     const result = flattenAXTree(nodes);
-    expect(result[0]?.speechText).toBe("[グリッド 1行×2列]");
-    expect(result[2]?.speechText).toBe("[グリッドセル 1/2] A1");
-    expect(result[3]?.speechText).toBe("[グリッドセル 2/2] B1");
+    expect(result[0]?.speechText).toBe("[grid 1行×2列]");
+    expect(result[2]?.speechText).toBe("[gridcell 1/2] A1");
+    expect(result[3]?.speechText).toBe("[gridcell 2/2] B1");
   });
 
   test("複数行のデータテーブルで各行のセルに正しい行位置が付与される", () => {
@@ -283,7 +283,7 @@ describe("enrichTableContext (via flattenAXTree)", () => {
     const cells = result.filter((n) => n.role === "cell");
     expect(cells[0]?.properties).toMatchObject({ tableRowIndex: 2 });
     expect(cells[1]?.properties).toMatchObject({ tableRowIndex: 3 });
-    expect(cells[0]?.speechText).toBe("[セル 1/1, 名前] 田中");
-    expect(cells[1]?.speechText).toBe("[セル 1/1, 名前] 佐藤");
+    expect(cells[0]?.speechText).toBe("[cell 1/1, 名前] 田中");
+    expect(cells[1]?.speechText).toBe("[cell 1/1, 名前] 佐藤");
   });
 });

@@ -1,118 +1,25 @@
 /**
  * NVDA テキスト変換エンジン (Speech Simulator)。
  *
- * `A11yNode` の role / name / properties / state から、NVDA 風の日本語
+ * `A11yNode` の role / name / properties / state から、NVDA 風の
  * 読み上げ文字列を合成する。出力フォーマットは DD §2.3 に準拠:
  *
  *     [{Role・Properties}] {Name} ({States})
  *
+ * ロール名は ARIA / Chrome AX Tree のまま（英語）で出力する。
+ * 状態ラベル (STATE_LABELS) は日本語で出力する。
+ *
  * 例:
- *   - `[ボタン] 送信 (利用不可)`
- *   - `[見出し2] 概要`
- *   - `[コンボボックス] 国 (展開)`
+ *   - `[button] 送信 (利用不可)`
+ *   - `[heading2] 概要`
+ *   - `[combobox] 国 (展開)`
  *
  * 純粋関数として実装しており、環境 (Node.js / ブラウザ) を問わず同じ
- * 出力を返す。新しい role / state を追加する場合はこのファイルの
- * `ROLE_LABELS` / `STATE_LABELS` を更新するだけで良い。
+ * 出力を返す。新しい state を追加する場合はこのファイルの
+ * `STATE_LABELS` を更新するだけで良い。
  *
  * @see ../../../docs/dd.md §2.3
  */
-
-/** ARIA role → 日本語ラベル辞書。 */
-const ROLE_LABELS: Record<string, string> = {
-  button: "ボタン",
-  link: "リンク",
-  heading: "見出し",
-  textbox: "エディット",
-  searchbox: "検索",
-  combobox: "コンボボックス",
-  listbox: "リストボックス",
-  option: "オプション",
-  checkbox: "チェックボックス",
-  radio: "ラジオボタン",
-  switch: "スイッチ",
-  slider: "スライダー",
-  spinbutton: "スピンボタン",
-  progressbar: "プログレスバー",
-  list: "リスト",
-  listitem: "リスト項目",
-  table: "テーブル",
-  row: "行",
-  cell: "セル",
-  columnheader: "列見出し",
-  rowheader: "行見出し",
-  dialog: "ダイアログ",
-  alertdialog: "警告ダイアログ",
-  alert: "警告",
-  status: "ステータス",
-  navigation: "ナビゲーション",
-  main: "メイン",
-  banner: "バナー",
-  contentinfo: "コンテンツ情報",
-  complementary: "補足",
-  region: "領域",
-  article: "記事",
-  form: "フォーム",
-  search: "検索",
-  img: "画像",
-  image: "画像",
-  figure: "図",
-  separator: "区切り",
-  tab: "タブ",
-  tablist: "タブリスト",
-  tabpanel: "タブパネル",
-  menu: "メニュー",
-  menubar: "メニューバー",
-  menuitem: "メニュー項目",
-  tooltip: "ツールチップ",
-  StaticText: "テキスト",
-  text: "テキスト",
-  InlineTextBox: "テキスト断片",
-  ListMarker: "リストマーカー",
-  paragraph: "段落",
-  generic: "グループ",
-  group: "グループ",
-  RootWebArea: "ページ",
-  LabelText: "ラベル",
-  DisclosureTriangle: "開閉ボタン",
-  tree: "ツリー",
-  treeitem: "ツリー項目",
-  grid: "グリッド",
-  gridcell: "グリッドセル",
-  application: "アプリケーション",
-  document: "ドキュメント",
-  toolbar: "ツールバー",
-  log: "ログ",
-  timer: "タイマー",
-  marquee: "マーキー",
-  math: "数式",
-  note: "ノート",
-  definition: "定義",
-  term: "用語",
-  meter: "メーター",
-  Abbr: "略語",
-  blockquote: "引用",
-  code: "コード",
-  deletion: "削除",
-  emphasis: "強調",
-  insertion: "挿入",
-  strong: "太字",
-  subscript: "下付き",
-  superscript: "上付き",
-  time: "時刻",
-  // Chrome 内部ロール (日本語ラベル化)
-  rowgroup: "行グループ",
-  MenuListPopup: "メニューリスト",
-  Legend: "凡例",
-  Figcaption: "図キャプション",
-  LineBreak: "改行",
-  // 追加ウィジェットロール
-  scrollbar: "スクロールバー",
-  feed: "フィード",
-  directory: "ディレクトリ",
-  presentation: "プレゼンテーション",
-  none: "なし",
-};
 
 /**
  * 状態プロパティ → 日本語ラベル辞書。
@@ -145,17 +52,16 @@ export interface SpeechInput {
 const TABLE_CELL_ROLES = new Set(["cell", "gridcell", "columnheader", "rowheader"]);
 
 /**
- * role (＋ heading level のような構造系プロパティ) を日本語ラベルへ変換する。
+ * role (＋ heading level のような構造系プロパティ) をラベル文字列へ変換する。
  *
- * - `heading`: `properties.level` を末尾に連結 → "見出し2"
- * - `table` / `grid`: 行列数を付与 → "テーブル 3行×4列"
- * - `cell` / `gridcell`: 列位置＋ヘッダー名 → "セル 3/4, 権限"
- * - `columnheader` / `rowheader`: 列位置 → "列見出し 1/4"
- *
- * 辞書にない role はそのまま表示する (デバッグ容易性のため)。
+ * ロール名はそのまま使用し、構造系プロパティを付与する:
+ * - `heading`: `properties.level` を末尾に連結 → "heading2"
+ * - `table` / `grid`: 行列数を付与 → "table 3行×4列"
+ * - `cell` / `gridcell`: 列位置＋ヘッダー名 → "cell 3/4, 権限"
+ * - `columnheader` / `rowheader`: 列位置 → "columnheader 1/4"
  */
 function formatRoleLabel(role: string, properties: Record<string, unknown>): string {
-  const base = ROLE_LABELS[role] ?? role;
+  const base = role;
 
   if (role === "heading") {
     const level = properties["level"];

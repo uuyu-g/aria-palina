@@ -19,7 +19,7 @@ describe("extractA11yTree", () => {
     expect(tree).toHaveLength(1);
     expect(tree[0]?.role).toBe("main");
     expect(tree[0]?.name).toBe("メイン");
-    expect(tree[0]?.speechText).toBe("[メイン] メイン");
+    expect(tree[0]?.speechText).toBe("[main] メイン");
     expect(tree[0]?.depth).toBe(0);
   });
 
@@ -49,8 +49,8 @@ describe("extractA11yTree", () => {
       }),
     );
     expect(tree.map((n) => [n.role, n.depth, n.speechText])).toEqual([
-      ["main", 0, "[メイン]"],
-      ["button", 1, "[ボタン] 送信"],
+      ["main", 0, "[main]"],
+      ["button", 1, "[button] 送信"],
     ]);
   });
 });

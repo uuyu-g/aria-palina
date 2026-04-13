@@ -11,7 +11,7 @@ function fakeNodes(): A11yNode[] {
       depth: 0,
       properties: { level: 1 },
       state: {},
-      speechText: "[見出し1] タイトル",
+      speechText: "[heading1] タイトル",
       isFocusable: false,
       isIgnored: false,
     },
@@ -22,7 +22,7 @@ function fakeNodes(): A11yNode[] {
       depth: 1,
       properties: {},
       state: {},
-      speechText: "[ボタン] 送信",
+      speechText: "[button] 送信",
       isFocusable: true,
       isIgnored: false,
     },
@@ -33,7 +33,7 @@ function fakeNodes(): A11yNode[] {
       depth: 1,
       properties: {},
       state: {},
-      speechText: "[リンク] ホーム",
+      speechText: "[link] ホーム",
       isFocusable: true,
       isIgnored: false,
     },
@@ -46,7 +46,7 @@ describe("formatTextOutput", () => {
       indent: false,
       color: false,
     });
-    expect(result).toBe("[見出し1] タイトル\n[ボタン] 送信\n[リンク] ホーム");
+    expect(result).toBe("[heading1] タイトル\n[button] 送信\n[link] ホーム");
   });
 
   test("indent:true のとき depth に応じたインデントが付く", () => {
@@ -55,9 +55,9 @@ describe("formatTextOutput", () => {
       color: false,
     });
     const lines = result.split("\n");
-    expect(lines[0]).toBe("[見出し1] タイトル");
-    expect(lines[1]).toBe("  [ボタン] 送信");
-    expect(lines[2]).toBe("  [リンク] ホーム");
+    expect(lines[0]).toBe("[heading1] タイトル");
+    expect(lines[1]).toBe("  [button] 送信");
+    expect(lines[2]).toBe("  [link] ホーム");
   });
 
   test("color:true のとき ANSI エスケープシーケンスが含まれる", () => {
