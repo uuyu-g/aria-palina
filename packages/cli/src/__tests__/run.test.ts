@@ -72,9 +72,9 @@ describe("runCli", () => {
     expect(stderr.value).toBe("");
     const lines = stdout.value.trimEnd().split("\n");
     expect(lines.length).toBe(2);
-    expect(lines[0]).toContain("見出し");
+    expect(lines[0]).toContain("heading");
     expect(lines[0]).toContain("タイトル");
-    expect(lines[1]).toContain("ボタン");
+    expect(lines[1]).toContain("button");
     expect(lines[1]).toContain("送信");
   });
 
