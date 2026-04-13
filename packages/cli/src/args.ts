@@ -25,6 +25,41 @@ const HELP_TEXT = `palina — ページのアクセシビリティツリーを N
   palina --format json https://example.com
   palina --no-color --no-indent https://example.com | grep ボタン`;
 
+/**
+ * IANA 予約済み第二レベルドメイン (RFC 2606)
+ * @see https://www.iana.org/help/example-domains
+ */
+const IANA_RESERVED_DOMAINS = ["example.com", "example.net", "example.org"];
+
+/**
+ * IANA 予約済み TLD (RFC 2606)
+ */
+const IANA_RESERVED_TLDS = [".test", ".example", ".invalid", ".localhost"];
+
+export function isIanaReservedDomain(url: string): string | undefined {
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+
+  for (const domain of IANA_RESERVED_DOMAINS) {
+    if (hostname === domain || hostname.endsWith(`.${domain}`)) {
+      return domain;
+    }
+  }
+
+  for (const tld of IANA_RESERVED_TLDS) {
+    const bare = tld.slice(1);
+    if (hostname === bare || hostname.endsWith(tld)) {
+      return bare;
+    }
+  }
+
+  return undefined;
+}
+
 export interface CliArgs {
   url: string;
   headed: boolean;
@@ -96,6 +131,15 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
       ok: false,
       exitCode: 2,
       message: "URL が指定されていません。--url <URL> または位置引数で URL を指定してください。",
+    };
+  }
+
+  const reservedDomain = isIanaReservedDomain(url);
+  if (reservedDomain) {
+    return {
+      ok: false,
+      exitCode: 2,
+      message: `"${reservedDomain}" は IANA 予約済みドメイン (RFC 2606) です。実際の Web ページの URL を指定してください。`,
     };
   }
 

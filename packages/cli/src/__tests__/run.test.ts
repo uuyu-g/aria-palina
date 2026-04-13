@@ -58,15 +58,12 @@ describe("runCli", () => {
     const stderr = createWritableBuffer();
     const { factory } = fakeBrowserFactory();
 
-    const code = await runCli(
-      ["https://example.com", "--no-indent", "--no-color", "--wait", "none"],
-      {
-        stdout: stdout.stream,
-        stderr: stderr.stream,
-        isTTY: false,
-        browserFactory: factory,
-      },
-    );
+    const code = await runCli(["https://a11y.dev", "--no-indent", "--no-color", "--wait", "none"], {
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      isTTY: false,
+      browserFactory: factory,
+    });
 
     expect(code).toBe(0);
     expect(stderr.value).toBe("");
@@ -83,7 +80,7 @@ describe("runCli", () => {
     const stderr = createWritableBuffer();
     const { factory } = fakeBrowserFactory();
 
-    const code = await runCli(["https://example.com", "-f", "json", "--wait", "none"], {
+    const code = await runCli(["https://a11y.dev", "-f", "json", "--wait", "none"], {
       stdout: stdout.stream,
       stderr: stderr.stream,
       isTTY: false,
@@ -101,7 +98,7 @@ describe("runCli", () => {
     const stderr = createWritableBuffer();
     const { factory } = fakeBrowserFactory();
 
-    const code = await runCli(["--tui", "-u", "https://example.com"], {
+    const code = await runCli(["--tui", "-u", "https://a11y.dev"], {
       stdout: stdout.stream,
       stderr: stderr.stream,
       isTTY: false,
@@ -118,7 +115,7 @@ describe("runCli", () => {
     const stderr = createWritableBuffer();
     const { factory, closed } = fakeBrowserFactory({ throwOnExtract: true });
 
-    const code = await runCli(["https://example.com", "--wait", "none"], {
+    const code = await runCli(["https://a11y.dev", "--wait", "none"], {
       stdout: stdout.stream,
       stderr: stderr.stream,
       isTTY: false,
