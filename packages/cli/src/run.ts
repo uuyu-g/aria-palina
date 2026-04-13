@@ -79,8 +79,22 @@ export async function runCli(argv: readonly string[], io?: Partial<RunIO>): Prom
 
     const nodes = await extractA11yTree(adapter);
 
+    let outputNodes = nodes;
+    if (args.role) {
+      const roles = args.role;
+      const filtered = nodes.filter((n) => roles.includes(n.role));
+      if (filtered.length > 0) {
+        const minDepth = Math.min(...filtered.map((n) => n.depth));
+        outputNodes = filtered.map((n) => ({ ...n, depth: n.depth - minDepth }));
+      } else {
+        outputNodes = filtered;
+      }
+    }
+
     const output =
-      args.format === "json" ? formatJsonOutput(nodes) : formatTextOutput(nodes, { indent, color });
+      args.format === "json"
+        ? formatJsonOutput(outputNodes)
+        : formatTextOutput(outputNodes, { indent, color });
 
     stdout.write(output + "\n");
     return 0;
