@@ -2,21 +2,7 @@ import { describe, expect, test } from "vite-plus/test";
 import type { BrowserFactory, BrowserHandle } from "../run.js";
 import { runCli } from "../run.js";
 import type { MinimalCDPSession } from "../playwright-cdp-adapter.js";
-
-function createWritableBuffer() {
-  let buf = "";
-  return {
-    stream: {
-      write(chunk: string) {
-        buf += chunk;
-        return true;
-      },
-    },
-    get value() {
-      return buf;
-    },
-  };
-}
+import { createWritableBuffer } from "./helpers.js";
 
 function fakeBrowserFactory(opts?: { throwOnExtract?: boolean }): {
   factory: BrowserFactory;

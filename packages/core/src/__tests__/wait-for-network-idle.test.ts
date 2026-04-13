@@ -1,30 +1,6 @@
 import { describe, expect, test, vi } from "vite-plus/test";
-import type { ICDPClient } from "../cdp-client.js";
 import { waitForNetworkIdle } from "../wait-for-network-idle.js";
-
-function createMockCDPClient() {
-  const listeners = new Map<string, Set<(params: unknown) => void>>();
-
-  const client: ICDPClient = {
-    send: vi.fn(async () => ({})) as ICDPClient["send"],
-    on(event: string, listener: (params: unknown) => void) {
-      if (!listeners.has(event)) listeners.set(event, new Set());
-      listeners.get(event)!.add(listener);
-    },
-    off(event: string, listener: (params: unknown) => void) {
-      listeners.get(event)?.delete(listener);
-    },
-  };
-
-  function emit(event: string, params: unknown): void {
-    const set = listeners.get(event);
-    if (set) {
-      for (const fn of set) fn(params);
-    }
-  }
-
-  return { client, emit, listeners };
-}
+import { createMockCDPClient } from "./helpers.js";
 
 describe("waitForNetworkIdle", () => {
   test("リクエストが無い静的ページでは idleTime 経過後に true で解決する", async () => {

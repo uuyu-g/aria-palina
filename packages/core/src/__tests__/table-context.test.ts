@@ -1,12 +1,7 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import type { RawAXNode } from "../ax-protocol.js";
 import { flattenAXTree } from "../flatten.js";
-
-/** テスト用に RawAXNode を作る薄いヘルパー。 */
-function node(partial: Partial<RawAXNode> & Pick<RawAXNode, "nodeId" | "ignored">): RawAXNode {
-  return { ...partial };
-}
+import { node } from "./helpers.js";
 
 /**
  * ヘッダー行 + データ行を持つ典型的な <table> の CDP ツリーを組み立てるヘルパー。

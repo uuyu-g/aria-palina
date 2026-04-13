@@ -1,21 +1,8 @@
-import { describe, expect, test, vi } from "vite-plus/test";
+import { describe, expect, test } from "vite-plus/test";
 
-import type { GetFullAXTreeResult, RawAXNode } from "../ax-protocol.js";
-import type { ICDPClient } from "../cdp-client.js";
+import type { RawAXNode } from "../ax-protocol.js";
 import { extractA11yTree } from "../extract.js";
-
-/**
- * 外部境界 (`ICDPClient`) は vi.fn() ベースのモックで十分。
- * 検証したいのはあくまで `extractA11yTree` の戻り値 (A11yNode[]) なので、
- * モックの役割は「決まった応答を返す」ことに限定する。
- */
-function mockCDPClient(result: GetFullAXTreeResult): ICDPClient {
-  return {
-    send: vi.fn(async () => result) as ICDPClient["send"],
-    on: vi.fn(),
-    off: vi.fn(),
-  };
-}
+import { mockCDPClient } from "./helpers.js";
 
 describe("extractA11yTree", () => {
   test("単一ノードの CDP 応答を A11yNode の配列に変換する", async () => {
