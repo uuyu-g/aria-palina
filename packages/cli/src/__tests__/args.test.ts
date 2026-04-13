@@ -10,6 +10,7 @@ describe("parseCliArgs", () => {
         url: "https://example.com",
         headed: false,
         format: "text",
+        role: undefined,
         indent: undefined,
         color: undefined,
         tui: false,
@@ -225,6 +226,75 @@ describe("parseCliArgs", () => {
       ok: false,
       exitCode: 2,
       message: expect.stringContaining("--timeout"),
+    });
+  });
+
+  test("--role 指定時は role がロール名の配列になる", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--role", "heading"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ role: ["heading"] }),
+    });
+  });
+
+  test("-r エイリアスが --role として解釈される", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "-r", "button"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ role: ["button"] }),
+    });
+  });
+
+  test("--role でカンマ区切りの複数ロールを指定できる", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--role", "heading,link"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ role: ["heading", "link"] }),
+    });
+  });
+
+  test("--role 未指定時は role が undefined になる", () => {
+    const result = parseCliArgs(["-u", "https://x.com"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ role: undefined }),
+    });
+  });
+
+  test("--role の値は小文字に正規化される", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--role", "Heading,LINK"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ role: ["heading", "link"] }),
+    });
+  });
+
+  test("--role landmark がランドマークロール群に展開される", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--role", "landmark"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({
+        role: [
+          "main",
+          "navigation",
+          "banner",
+          "contentinfo",
+          "complementary",
+          "search",
+          "region",
+          "form",
+        ],
+      }),
+    });
+  });
+
+  test("--role landmark,heading でランドマーク群と heading が結合される", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--role", "landmark,heading"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({
+        role: expect.arrayContaining(["main", "navigation", "heading"]),
+      }),
     });
   });
 });

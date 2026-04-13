@@ -162,4 +162,94 @@ describe("runCli", () => {
     expect(code).toBe(2);
     expect(stderr.value).toContain("URL");
   });
+
+  test("--role 指定時に該当ロールのノードのみ出力される", async () => {
+    const stdout = createWritableBuffer();
+    const stderr = createWritableBuffer();
+    const { factory } = fakeBrowserFactory();
+
+    const code = await runCli(
+      ["https://example.com", "--role", "heading", "--no-indent", "--no-color", "--wait", "none"],
+      {
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        isTTY: false,
+        browserFactory: factory,
+      },
+    );
+
+    expect(code).toBe(0);
+    const lines = stdout.value.trimEnd().split("\n");
+    expect(lines.length).toBe(1);
+    expect(lines[0]).toContain("heading");
+    expect(lines[0]).toContain("タイトル");
+  });
+
+  test("--role で複数ロール指定時に該当する全ノードが出力される", async () => {
+    const stdout = createWritableBuffer();
+    const stderr = createWritableBuffer();
+    const { factory } = fakeBrowserFactory();
+
+    const code = await runCli(
+      [
+        "https://example.com",
+        "--role",
+        "heading,button",
+        "--no-indent",
+        "--no-color",
+        "--wait",
+        "none",
+      ],
+      {
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        isTTY: false,
+        browserFactory: factory,
+      },
+    );
+
+    expect(code).toBe(0);
+    const lines = stdout.value.trimEnd().split("\n");
+    expect(lines.length).toBe(2);
+  });
+
+  test("--role 指定時に json 出力でもフィルタが適用される", async () => {
+    const stdout = createWritableBuffer();
+    const stderr = createWritableBuffer();
+    const { factory } = fakeBrowserFactory();
+
+    const code = await runCli(
+      ["https://example.com", "-r", "button", "-f", "json", "--wait", "none"],
+      {
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        isTTY: false,
+        browserFactory: factory,
+      },
+    );
+
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout.value) as { role: string }[];
+    expect(parsed.length).toBe(1);
+    expect(parsed[0].role).toBe("button");
+  });
+
+  test("--role に該当ノードがない場合は空の出力になる", async () => {
+    const stdout = createWritableBuffer();
+    const stderr = createWritableBuffer();
+    const { factory } = fakeBrowserFactory();
+
+    const code = await runCli(
+      ["https://example.com", "--role", "alert", "--no-indent", "--no-color", "--wait", "none"],
+      {
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        isTTY: false,
+        browserFactory: factory,
+      },
+    );
+
+    expect(code).toBe(0);
+    expect(stdout.value.trimEnd()).toBe("");
+  });
 });

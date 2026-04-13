@@ -8,6 +8,7 @@ const HELP_TEXT = `palina — ページのアクセシビリティツリーを N
 オプション:
   -u, --url <URL>    対象 URL (位置引数でも可)
   -f, --format <fmt> 出力形式: "text" (デフォルト) | "json"
+  -r, --role <roles> 指定ロールのみ出力 (カンマ区切り, 例: heading,landmark)
       --indent       インデント出力を強制 (デフォルト: TTY なら有効)
       --no-indent    インデントなし出力を強制
       --color        カラー出力を強制 (デフォルト: TTY なら有効)
@@ -20,15 +21,20 @@ const HELP_TEXT = `palina — ページのアクセシビリティツリーを N
   -h, --help         このヘルプを表示
   -V, --version      バージョンを表示
 
+ロールエイリアス:
+  landmark = main,navigation,banner,contentinfo,complementary,search,region,form
+
 例:
   palina https://example.com
   palina --format json https://example.com
+  palina --role heading https://example.com
   palina --no-color --no-indent https://example.com | grep ボタン`;
 
 export interface CliArgs {
   url: string;
   headed: boolean;
   format: "text" | "json";
+  role: string[] | undefined;
   indent: boolean | undefined;
   color: boolean | undefined;
   tui: boolean;
@@ -36,6 +42,19 @@ export interface CliArgs {
   idleTime: number;
   timeout: number;
 }
+
+const ROLE_ALIASES: Record<string, string[]> = {
+  landmark: [
+    "main",
+    "navigation",
+    "banner",
+    "contentinfo",
+    "complementary",
+    "search",
+    "region",
+    "form",
+  ],
+};
 
 export type ParseResult =
   | { ok: true; args: CliArgs }
@@ -52,6 +71,7 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
         url: { type: "string", short: "u" },
         headed: { type: "boolean", default: false },
         format: { type: "string", short: "f", default: "text" },
+        role: { type: "string", short: "r" },
         indent: { type: "boolean" },
         "no-indent": { type: "boolean" },
         color: { type: "boolean" },
@@ -167,12 +187,26 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
     color = false;
   }
 
+  const roleRaw = values.role as string | undefined;
+  const role = roleRaw
+    ? [
+        ...new Set(
+          roleRaw
+            .split(",")
+            .map((r) => r.trim().toLowerCase())
+            .filter(Boolean)
+            .flatMap((r) => ROLE_ALIASES[r] ?? [r]),
+        ),
+      ]
+    : undefined;
+
   return {
     ok: true,
     args: {
       url,
       headed: (values.headed as boolean) ?? false,
       format,
+      role: role?.length ? role : undefined,
       indent,
       color,
       tui: (values.tui as boolean) ?? false,
