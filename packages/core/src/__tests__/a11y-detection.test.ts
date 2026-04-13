@@ -8,13 +8,8 @@
  */
 import { describe, expect, test } from "vite-plus/test";
 
-import type { RawAXNode } from "../ax-protocol.js";
 import { flattenAXTree } from "../flatten.js";
-
-/** テスト用に RawAXNode を作る薄いヘルパー。 */
-function node(partial: Partial<RawAXNode> & Pick<RawAXNode, "nodeId" | "ignored">): RawAXNode {
-  return { ...partial };
-}
+import { node } from "./helpers.js";
 
 describe("a11y 不適切パターンの検出可視性", () => {
   describe("名前なしインタラクティブ要素", () => {

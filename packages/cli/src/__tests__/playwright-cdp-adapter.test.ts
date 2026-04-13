@@ -1,23 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
-import type { MinimalCDPSession } from "../playwright-cdp-adapter.js";
 import { adaptCDPSession } from "../playwright-cdp-adapter.js";
-
-function createFakeSession() {
-  const listeners = new Map<string, Set<(params: unknown) => void>>();
-  const session: MinimalCDPSession = {
-    async send(_method: string, _params?: Record<string, unknown>) {
-      return { nodes: [{ nodeId: "1", role: { value: "button" } }] };
-    },
-    on(event: string, listener: (params: unknown) => void) {
-      if (!listeners.has(event)) listeners.set(event, new Set());
-      listeners.get(event)!.add(listener);
-    },
-    off(event: string, listener: (params: unknown) => void) {
-      listeners.get(event)?.delete(listener);
-    },
-  };
-  return { session, listeners };
-}
+import { createFakeSession } from "./helpers.js";
 
 describe("adaptCDPSession", () => {
   test("send は下位セッションの結果をそのまま返す", async () => {
