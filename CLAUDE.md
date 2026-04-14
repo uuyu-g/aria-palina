@@ -18,6 +18,120 @@
   各フェーズのステータス (✅ / 🚧 / ⏳) と成果物をここに集約する。
   フェーズ完了時に必ず更新すること。
 
+---
+
+## 🗂️ コードベース構造
+
+### モノレポ概要
+
+```
+aria-palina/
+├── packages/
+│   ├── core/          # @aria-palina/core  — 環境非依存コアエンジン
+│   └── cli/           # @aria-palina/cli   — Playwright ワンショット CLI
+├── docs/              # 仕様書・進捗トラッキング
+├── .github/workflows/ # CI (GitHub Actions)
+├── package.json       # ルート (private, pnpm workspaces)
+├── pnpm-workspace.yaml
+├── tsconfig.base.json
+└── CLAUDE.md          # 本ファイル
+```
+
+- **パッケージマネージャ**: pnpm 10.33.0 (pnpm workspaces で `packages/*` を管理)
+- **TypeScript**: 6.x — `target: ES2022`, `module: ESNext`, `moduleResolution: Bundler`, `strict: true`
+
+### `@aria-palina/core` (packages/core)
+
+環境非依存の純粋 TypeScript ライブラリ。外部ランタイム依存なし。
+
+| モジュール                     | 責務                                                              |
+| ------------------------------ | ----------------------------------------------------------------- |
+| `src/cdp-client.ts`            | `ICDPClient` インターフェース定義 (DI 境界)                       |
+| `src/types.ts`                 | `A11yNode` データモデル                                           |
+| `src/ax-protocol.ts`           | CDP `Accessibility` ドメインの最小型定義 (`RawAXNode` 等)         |
+| `src/extract.ts`               | `extractA11yTree(cdp)` — CDP から AX ツリーを取得し平坦化         |
+| `src/flatten.ts`               | `flattenAXTree(rawNodes)` — DFS 平坦化 + `depth` 算出             |
+| `src/speech.ts`                | `buildSpeechText(input)` — NVDA 風日本語テキスト変換              |
+| `src/table-context.ts`         | `enrichTableContext()` — テーブル系ノードに位置・列ヘッダーを付与 |
+| `src/wait-for-network-idle.ts` | `waitForNetworkIdle(cdp)` — SPA 非同期読み込み待機                |
+
+**公開 API** (`src/index.ts`):
+
+```ts
+// 型
+export type { ICDPClient } from "./cdp-client.js";
+export type { A11yNode } from "./types.js";
+export type { GetFullAXTreeResult, RawAXNode, RawAXProperty, RawAXValue } from "./ax-protocol.js";
+// 関数
+export { flattenAXTree, type FlattenOptions } from "./flatten.js";
+export { buildSpeechText, type SpeechInput } from "./speech.js";
+export { extractA11yTree } from "./extract.js";
+export { waitForNetworkIdle, type NetworkIdleOptions } from "./wait-for-network-idle.js";
+```
+
+**ビルド**: `vp pack --dts --clean src/index.ts` → `dist/index.mjs` + `dist/index.d.mts`
+
+### `@aria-palina/cli` (packages/cli)
+
+Playwright 経由でブラウザの AOM を取得し、NVDA 風テキストを stdout に出力するワンショット CLI。
+
+| モジュール                      | 責務                                                          |
+| ------------------------------- | ------------------------------------------------------------- |
+| `src/args.ts`                   | `node:util.parseArgs` による argv 解析 (tri-state オプション) |
+| `src/colorize.ts`               | role ベースの ANSI カラーライザ (外部依存なし)                |
+| `src/formatter.ts`              | text/json 出力フォーマッタ (TTY 判定連動)                     |
+| `src/playwright-cdp-adapter.ts` | Playwright `CDPSession` → `ICDPClient` アダプター             |
+| `src/run.ts`                    | `runCli(argv, io?)` — ブラウザ起動→AOM 取得→整形→出力         |
+| `src/bin.ts`                    | `#!/usr/bin/env node` shebang エントリ                        |
+
+**公開 API** (`src/index.ts`):
+
+```ts
+export { runCli } from "./run.js";
+export type { CliArgs } from "./args.js";
+```
+
+**依存関係**: `@aria-palina/core@workspace:*`, `playwright-core@~1.56.0`
+**バイナリ**: `palina` → `./dist/bin.mjs`
+
+### 将来のパッケージ (未実装)
+
+DD §1.1 で計画されているが、まだ作成されていないパッケージ:
+
+| パッケージ                | Phase | 概要                                                                        |
+| ------------------------- | ----- | --------------------------------------------------------------------------- |
+| `@aria-palina/tui`        | 4-6   | Ink (React) ベース TUI。仮想スクロール・デュアルナビゲーション・Matrix View |
+| `@aria-palina/extension`  | 7     | Chrome DevTools 拡張 (Manifest V3)                                          |
+| `@aria-palina/test-utils` | 8     | Playwright カスタムマッチャー (`toHavePalinaText` 等)                       |
+| `aria-palina` (umbrella)  | 9     | 統合バイナリ `palina` の公開パッケージ                                      |
+
+---
+
+## 🚦 実装進捗
+
+> 最新の詳細は [`docs/progress.md`](./docs/progress.md) を参照。
+
+| Phase | 内容                               | ステータス |
+| ----- | ---------------------------------- | ---------- |
+| 1     | モノレポ基盤と DI Core エンジン    | ✅ Done    |
+| 2     | AOM 抽出・平坦化ロジック (Core)    | ✅ Done    |
+| 3     | Playwright 統合とワンショット CLI  | ✅ Done    |
+| 4     | Ink TUI 基盤とパフォーマンス最適化 | ⏳ Pending |
+| 5     | デュアルナビゲーション実装 (TUI)   | ⏳ Pending |
+| 6     | Matrix View (Headed モード同期)    | ⏳ Pending |
+| 7     | Chrome Extension (DevTools Panel)  | ⏳ Pending |
+| 8     | Test Utilities (BDD)               | ⏳ Pending |
+| 9     | 統合バイナリ `palina` の公開       | ⏳ Pending |
+
+**Phase 1-3 以降に追加された機能:**
+
+- テーブルコンテキスト付与 (`enrichTableContext`) — テーブル系ノードに行列位置・列ヘッダー名を自動付与
+- ネットワークアイドル検出 (`waitForNetworkIdle`) — SPA の非同期データ読み込み待機
+- a11y 検出テスト — アクセシビリティ劣化ページの CLI 出力検証
+- テストヘルパー共通化 — `packages/*/src/__tests__/helpers.ts` に共有ユーティリティを抽出
+
+---
+
 ## 🧰 ツールチェーン: Vite+
 
 本プロジェクトは **Vite+ (`vp` コマンド)** を統一ツールチェーンとして採用している。
@@ -44,6 +158,18 @@
   ライブラリをビルドしたい場合は **`vp pack`** (各 package.json に定義済み) を使う。
 - `pnpm` を直接叩くより `vp` 経由を優先する (package manager は Vite+ が wrap する)。
 
+### クイックリファレンス
+
+```bash
+vp test                              # 全ワークスペースのテスト実行
+vp check                             # lint + format チェック
+vp check --fix                       # lint + format 自動修正
+vp run -F './packages/*' build       # 全パッケージのライブラリビルド
+vp install <pkg>                     # 依存追加
+```
+
+---
+
 ## 🧪 テストの規約
 
 ### テストランナー / 配置
@@ -52,10 +178,32 @@
 - テストファイルは実装ファイルと同じパッケージの
   `src/__tests__/*.test.ts` 配下に置く。
   (例: `packages/core/src/flatten.ts` → `packages/core/src/__tests__/flatten.test.ts`)
+- 共有テストヘルパーは `src/__tests__/helpers.ts` に配置。
 - import は必ず:
   ```ts
   import { describe, expect, test, vi } from "vite-plus/test";
   ```
+
+### 現在のテストファイル一覧
+
+**`@aria-palina/core`** (`packages/core/src/__tests__/`):
+
+- `flatten.test.ts` — DFS 平坦化、depth 付与、ignored スキップ
+- `speech.test.ts` — NVDA テキスト変換 (ロール・状態・heading level 等)
+- `extract.test.ts` — CDP モック経由の AOM 抽出
+- `table-context.test.ts` — テーブル位置・列ヘッダー付与
+- `wait-for-network-idle.test.ts` — ネットワークアイドル検出
+- `a11y-detection.test.ts` — a11y 劣化検出
+- `helpers.ts` — 共有テストユーティリティ
+
+**`@aria-palina/cli`** (`packages/cli/src/__tests__/`):
+
+- `args.test.ts` — argv 解析・バリデーション
+- `colorize.test.ts` — ANSI カラー装飾
+- `formatter.test.ts` — text/json 出力フォーマット
+- `playwright-cdp-adapter.test.ts` — CDP アダプター透過性
+- `run.test.ts` — CLI 実行フロー (fake BrowserFactory 注入)
+- `helpers.ts` — 共有テストユーティリティ
 
 ### 🌐 テストケース名は日本語で書く
 
@@ -162,6 +310,8 @@ test("calls Accessibility.getFullAXTree", async () => {
 });
 ```
 
+---
+
 ## 🏗️ アーキテクチャ不変条件
 
 - **`@aria-palina/core` は環境非依存 (pure TS)** を保つ。
@@ -172,6 +322,50 @@ test("calls Accessibility.getFullAXTree", async () => {
 - Phase の実装順序は `docs/dd.md` §4 を守る。既存のフェーズを飛ばして将来フェーズを
   先出しする場合は必ず `docs/progress.md` でその旨を記録する。
 
+### データフロー
+
+```
+[ブラウザ]
+    │  Accessibility.getFullAXTree (CDP)
+    ▼
+extractA11yTree(cdp)          ← @aria-palina/core
+    │  RawAXNode[]
+    ▼
+flattenAXTree(rawNodes)       ← @aria-palina/core (純粋関数)
+    │  A11yNode[] (depth 付き)
+    ▼
+enrichTableContext(nodes)     ← @aria-palina/core (テーブル系後処理)
+    │  A11yNode[] (位置・ヘッダー付き)
+    ▼
+formatTextOutput / formatJsonOutput  ← @aria-palina/cli
+    │
+    ▼
+[stdout]
+```
+
+### DI 境界: `ICDPClient`
+
+Core はブラウザ接続を `ICDPClient` インターフェースで抽象化している。
+各アダプタ層が具体実装を注入する:
+
+| アダプタ                               | パッケージ               | Phase | 状態 |
+| -------------------------------------- | ------------------------ | ----- | ---- |
+| Playwright `CDPSession` → `ICDPClient` | `@aria-palina/cli`       | 3     | ✅   |
+| `chrome.debugger` → `ICDPClient`       | `@aria-palina/extension` | 7     | ⏳   |
+
+---
+
+## ⚙️ CI/CD
+
+GitHub Actions (`.github/workflows/ci.yml`):
+
+- **トリガー**: `main` への push / PR
+- **環境**: Ubuntu latest, Node.js 24, pnpm
+- **ステップ**: Install → Format check → Lint → Type check → Build → Test
+- **concurrency**: 同一 ref のジョブは後勝ちキャンセル
+
+---
+
 ## 📝 コミットとブランチ運用
 
 - 作業は機能ブランチで行い、ブランチ名は Claude Code が命名するもの
@@ -180,6 +374,8 @@ test("calls Accessibility.getFullAXTree", async () => {
   例: `feat(core): implement Phase 2 AOM extraction and speech simulator`
 - プッシュは `git push -u origin <branch>` で行う。
 - **PR は明示的に指示されたときのみ作成する**。
+
+---
 
 ## 🔖 フェーズ完了時のチェックリスト
 
