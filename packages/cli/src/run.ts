@@ -1,4 +1,5 @@
 import { extractA11yTree, waitForNetworkIdle } from "@aria-palina/core";
+import type { CliArgs } from "./args.js";
 import { parseCliArgs } from "./args.js";
 import { formatJsonOutput, formatTextOutput } from "./formatter.js";
 import type { MinimalCDPSession } from "./playwright-cdp-adapter.js";
@@ -11,11 +12,21 @@ export interface BrowserHandle {
 
 export type BrowserFactory = (opts: { headed: boolean }) => Promise<BrowserHandle>;
 
+/**
+ * `--tui` フラグ時に実行される TUI ランナー。
+ *
+ * Phase 4 で `@aria-palina/tui` の `runTui` を dynamic import して差し込む。
+ * テストでは fake を注入する。
+ */
+export type TuiRunner = (args: CliArgs) => Promise<number>;
+
 export interface RunIO {
   stdout: { write(chunk: string): boolean };
   stderr: { write(chunk: string): boolean };
   isTTY: boolean;
   browserFactory: BrowserFactory;
+  /** --tui 指定時に呼び出されるランナー。未指定時は `@aria-palina/tui` を dynamic import する。 */
+  tuiRunner?: TuiRunner;
 }
 
 async function defaultBrowserFactory(opts: { headed: boolean }): Promise<BrowserHandle> {
@@ -41,11 +52,17 @@ function isBrowserNotFound(error: unknown): boolean {
   return msg.includes("Executable doesn't exist") || msg.includes("browserType.launch");
 }
 
+async function defaultTuiRunner(args: CliArgs): Promise<number> {
+  const mod = await import("@aria-palina/tui");
+  return mod.runTui(args, mod.defaultTuiIO());
+}
+
 export async function runCli(argv: readonly string[], io?: Partial<RunIO>): Promise<number> {
   const stdout = io?.stdout ?? process.stdout;
   const stderr = io?.stderr ?? process.stderr;
   const isTTY = io?.isTTY ?? process.stdout.isTTY === true;
   const browserFactory = io?.browserFactory ?? defaultBrowserFactory;
+  const tuiRunner = io?.tuiRunner ?? defaultTuiRunner;
 
   const parsed = parseCliArgs(argv);
   if (!parsed.ok) {
@@ -57,8 +74,7 @@ export async function runCli(argv: readonly string[], io?: Partial<RunIO>): Prom
   const { args } = parsed;
 
   if (args.tui) {
-    stderr.write("--tui モードは Phase 4 で実装予定です。\n");
-    return 2;
+    return tuiRunner(args);
   }
 
   const indent = args.indent ?? isTTY;

@@ -14,7 +14,7 @@ const HELP_TEXT = `palina — ページのアクセシビリティツリーを N
       --color        カラー出力を強制 (デフォルト: TTY なら有効)
       --no-color     カラーなし出力を強制
       --headed       ブラウザを表示して実行
-      --tui          TUI モードで起動 (未実装)
+      --tui          TUI モードで起動 (Ink ベースのインタラクティブ UI)
   -w, --wait <strategy>  待機戦略: "network-idle" (デフォルト) | "none"
       --idle-time <ms>   ネットワークアイドル判定の静穏時間 (デフォルト: 500)
   -t, --timeout <ms>     最大待機時間 (デフォルト: 30000)
