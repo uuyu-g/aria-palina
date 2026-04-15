@@ -211,7 +211,7 @@ describe("App", () => {
     stdin.write("h");
     await waitFrames();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("見出しフィルタ");
+    expect(frame).toContain("[見出し]"); // 種別ラベルのみのヘッダー
     expect(frame).toContain("> [heading] 見出し 1"); // 選択行が見出し 1
     unmount();
   });
@@ -226,7 +226,7 @@ describe("App", () => {
     stdin.write("d");
     await waitFrames();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("ランドマークフィルタ");
+    expect(frame).toContain("[ランドマーク]");
     expect(frame).toContain("> [navigation] nav-landmark"); // 選択行が navigation
     unmount();
   });
@@ -240,14 +240,14 @@ describe("App", () => {
     stdin.write("h");
     await waitFrames();
     let frame = lastFrame() ?? "";
-    expect(frame).toContain("1/5");
-    expect(frame).not.toContain("フィルタ");
+    expect(frame).toContain("[1/5]");
+    expect(frame).not.toContain("種別切替"); // フィルタ用フッターは出ていない
     expect(frame).toContain("h 見出し"); // 通常モードのフッターのまま
     stdin.write("d");
     await waitFrames();
     frame = lastFrame() ?? "";
-    expect(frame).toContain("1/5");
-    expect(frame).not.toContain("フィルタ");
+    expect(frame).toContain("[1/5]");
+    expect(frame).not.toContain("種別切替");
     unmount();
   });
 });
@@ -262,7 +262,7 @@ describe("App filter mode", () => {
     stdin.write("h");
     await waitFrames();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("見出しフィルタ");
+    expect(frame).toContain("[見出し]"); // ヘッダーは種別ラベルのみ
     expect(frame).toContain("見出し 1");
     // 非見出しノードの name は表示されない
     expect(frame).not.toContain("btn1");
@@ -294,16 +294,16 @@ describe("App filter mode", () => {
     await waitFrames();
     stdin.write("h");
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("見出しフィルタ");
+    expect(lastFrame() ?? "").toContain("[見出し]");
     stdin.write("\u001B[C"); // →
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("ランドマークフィルタ");
+    expect(lastFrame() ?? "").toContain("[ランドマーク]");
     stdin.write("\u001B[C"); // →
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("インタラクティブフィルタ");
+    expect(lastFrame() ?? "").toContain("[インタラクティブ]");
     stdin.write("\u001B[C"); // →
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("見出しフィルタ");
+    expect(lastFrame() ?? "").toContain("[見出し]");
     unmount();
   });
 
@@ -317,10 +317,10 @@ describe("App filter mode", () => {
     await waitFrames();
     stdin.write("\u001B[D"); // ←
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("インタラクティブフィルタ");
+    expect(lastFrame() ?? "").toContain("[インタラクティブ]");
     stdin.write("\u001B[D"); // ←
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("ランドマークフィルタ");
+    expect(lastFrame() ?? "").toContain("[ランドマーク]");
     unmount();
   });
 
@@ -337,8 +337,8 @@ describe("App filter mode", () => {
     stdin.write("\u001B"); // Esc
     await waitFrames();
     const frame = lastFrame() ?? "";
-    expect(frame).not.toContain("フィルタ");
-    expect(frame).toContain("5/7"); // 解除後も cursor=4 を維持
+    expect(frame).not.toContain("種別切替"); // フィルタ用フッターは消えている
+    expect(frame).toContain("[5/7]"); // 解除後も cursor=4 を維持
     expect(frame).toContain("h 見出し"); // 通常モードのフッター
     // 解除後は全ノードが見える
     expect(frame).toContain("main-landmark");
@@ -373,8 +373,8 @@ describe("App filter mode", () => {
     stdin.write("\t"); // Tab
     await waitFrames();
     const frame = lastFrame() ?? "";
-    expect(frame).not.toContain("フィルタ"); // 通常モードに戻っている
-    expect(frame).toContain("3/7"); // index 2 (btn1) へ移動
+    expect(frame).not.toContain("種別切替"); // 通常モードに戻っている
+    expect(frame).toContain("[3/7]"); // index 2 (btn1) へ移動
     unmount();
   });
 });

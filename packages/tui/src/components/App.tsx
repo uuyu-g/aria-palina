@@ -31,7 +31,7 @@ const KIND_LABEL: Readonly<Record<NodeKind, string>> = {
 };
 
 const FOOTER_NORMAL = "↑/↓ 移動 Tab フォーカス h 見出し d ランドマーク g/G 先頭末尾 q 終了";
-const FOOTER_FILTER = "↑/↓ 移動 ←/→ フィルタ切替 g/G 先頭末尾 Esc 解除 q 終了";
+const FOOTER_FILTER = "↑/↓ 移動 ←/→ 種別切替 g/G 先頭末尾 Esc 解除 q 終了";
 
 /**
  * `from` の位置から最寄りの `kind` 一致ノードを探す。
@@ -221,7 +221,7 @@ export function App({ url, nodes, viewportOverride, onExit }: AppProps) {
       ? nodes.length === 0
         ? "0/0"
         : `${cursor + 1}/${nodes.length}`
-      : `${KIND_LABEL[filterKind]}フィルタ`;
+      : KIND_LABEL[filterKind];
 
   const footer = filterKind === null ? FOOTER_NORMAL : FOOTER_FILTER;
 
