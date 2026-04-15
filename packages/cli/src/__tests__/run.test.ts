@@ -96,21 +96,28 @@ describe("runCli", () => {
     expect(parsed.length).toBe(2);
   });
 
-  test("--tui 指定時は exitCode:2 を返し stderr に案内を出す", async () => {
+  test("--tui 指定時は tuiRunner に dispatch され、その結果コードが返る", async () => {
     const stdout = createWritableBuffer();
     const stderr = createWritableBuffer();
     const { factory } = fakeBrowserFactory();
+    let receivedUrl = "";
+    const tuiRunner = async (args: { url: string }) => {
+      receivedUrl = args.url;
+      return 0;
+    };
 
     const code = await runCli(["--tui", "-u", "https://example.com"], {
       stdout: stdout.stream,
       stderr: stderr.stream,
       isTTY: false,
       browserFactory: factory,
+      tuiRunner,
     });
 
-    expect(code).toBe(2);
-    expect(stderr.value).toContain("Phase 4");
+    expect(code).toBe(0);
+    expect(receivedUrl).toBe("https://example.com");
     expect(stdout.value).toBe("");
+    expect(stderr.value).toBe("");
   });
 
   test("extract 失敗時も browser.close が呼ばれる", async () => {
