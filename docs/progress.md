@@ -24,7 +24,7 @@
 | 2 | AOM 抽出・平坦化ロジック (Core) | ✅ Done | `packages/core/src/{ax-protocol,flatten,speech,extract}.ts` + `__tests__/` |
 | 3 | Playwright 統合と ワンショット CLI | ✅ Done | `packages/cli/src/{args,colorize,formatter,playwright-cdp-adapter,run,bin,index}.ts` + `__tests__/` |
 | 4 | Ink TUI 基盤と パフォーマンス最適化 | ✅ Done | `packages/tui/src/{run,virtual-window,role-style,playwright-cdp-adapter,index}.ts` + `components/{App,VirtualList,NodeRow}.tsx` + `__tests__/` |
-| 5 | デュアルナビゲーション実装 (TUI) | ✅ Done | `packages/core/src/node-kind.ts` + `packages/tui/src/components/App.tsx` (Tab / h/H / D 追加) + `__tests__/` |
+| 5 | デュアルナビゲーション実装 (TUI) | ✅ Done | `packages/core/src/node-kind.ts` (`findNext` / `filterByKind` / `cycleKind`) + `packages/tui/src/components/App.tsx` (Tab / モーダルフィルタ `h`・`d`・←/→・Esc) + `__tests__/` |
 | 6 | Matrix View (Headed モード同期) | ⏳ Pending | — |
 | 7 | Chrome Extension (DevTools Panel) | ⏳ Pending | — |
 | 8 | Test Utilities (BDD) | ⏳ Pending | — |
@@ -355,3 +355,33 @@ export { findNext, matchesKind, type NodeKind } from "./node-kind.js";
 ```
 
 `@aria-palina/tui` には新規 export なし (App の挙動拡張のみ)。
+
+## Phase 5.1 ショートカット体系リファクタ (モーダルフィルタ)
+
+Phase 5 完了後に、以下の理由でキーバインド体系を再設計した:
+
+- `H` (Shift+h) / `D` (Shift+d) の「Shift=逆方向」規約が非対称 (landmark の逆方向が未実装だった)。
+- 見出し・ランドマーク・インタラクティブが全て**単発ジャンプ**で、「今どの種別を巡回しているか」がユーザーに見えにくかった。スクリーンリーダーの「要素リスト (elements list)」UX に寄せる。
+
+### 新しい体系
+
+| キー | モード | アクション |
+| --- | --- | --- |
+| `h` | 通常 → フィルタ | 「見出し」フィルタモードに入り次の見出しへ |
+| `d` | 通常 → フィルタ | 「ランドマーク」フィルタモードに入り次のランドマークへ |
+| `↑` / `↓` / `j` / `k` | フィルタ中 | 絞り込まれたリスト内で 1 件移動 |
+| `←` / `→` | フィルタ中 | 種別を巡回 (`heading` → `landmark` → `interactive`) |
+| `g` / `G` | フィルタ中 | 絞り込みリストの先頭 / 末尾へ |
+| `Esc` | フィルタ中 | フィルタ解除して通常モードに戻る (カーソル位置は維持) |
+| `Tab` / `Shift+Tab` | 両モード | 全体ツリーのインタラクティブ要素を巡回 (フィルタ中に押すと自動解除) |
+
+### 実装差分
+
+- **`@aria-palina/core`**: `filterByKind(nodes, kind)` と `cycleKind(current, direction)` の 2 つの純粋ヘルパーを `node-kind.ts` に追加。既存の `matchesKind` / `findNext` をそのまま再利用。
+- **`@aria-palina/tui`**: `App.tsx` に `filterKind: NodeKind | null` 状態と、`visibleNodes` / `visibleToFull` / `visibleCursor` の `useMemo` 派生値を導入。`cursor` はフル配列のインデックスを維持するため `Esc` 復元は `setFilterKind(null)` だけで済む。ヘッダーは `[見出しフィルタ 2/3 · 全体 5/42]` のように絞り込みと全体の両方の位置を表示。該当要素が無いときは**フィルタモードに入らない** (`findNext` が `-1` を返した場合の no-op ガード)。
+- **UI**: フッターヘルプをモード別に切り替え (`↑/↓ 移動 Tab フォーカス h 見出し d ランドマーク …` ↔ `↑/↓ 移動 ←/→ フィルタ切替 … Esc 解除 …`)。
+
+### テスト
+
+- `packages/core/src/__tests__/node-kind.test.ts` — `filterByKind` (順序保存 / 空配列 / disabled 除外) と `cycleKind` (順・逆方向巡回) の純粋関数テストを追加。
+- `packages/tui/src/__tests__/app.test.tsx` — 既存の `H` / 大文字 `D` テストを削除し、`d` (小文字) によるランドマークフィルタ進入、`describe("App filter mode", ...)` に 7 本の新規テスト (絞り込み表示・↑↓ 挙動・←→ 巡回・Esc 解除・g/G・Tab 解除) を追加。全 180 件緑。

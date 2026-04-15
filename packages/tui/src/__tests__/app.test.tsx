@@ -4,22 +4,55 @@ import { render } from "ink-testing-library";
 import { App } from "../components/App.js";
 import { makeNode, makeNodes } from "./helpers.js";
 
-/** Phase 5 キーバインドのテスト用に混合種別のノード列を作成する。 */
+/** フィルタモード検証用に混合種別のノード列を作成する。 */
 function makeMixedNodes(): A11yNode[] {
   return [
-    makeNode({ backendNodeId: 1, role: "main" }), // 0: landmark
-    makeNode({ backendNodeId: 2, role: "heading", name: "見出し 1" }), // 1
-    makeNode({ backendNodeId: 3, role: "button", isFocusable: true, name: "btn1" }), // 2
+    makeNode({
+      backendNodeId: 1,
+      role: "main",
+      name: "main-landmark",
+      speechText: "[main] main-landmark",
+    }), // 0: landmark
+    makeNode({
+      backendNodeId: 2,
+      role: "heading",
+      name: "見出し 1",
+      speechText: "[heading] 見出し 1",
+    }), // 1
+    makeNode({
+      backendNodeId: 3,
+      role: "button",
+      isFocusable: true,
+      name: "btn1",
+      speechText: "[button] btn1",
+    }), // 2
     makeNode({
       backendNodeId: 4,
       role: "link",
       isFocusable: true,
       state: { disabled: true },
       name: "disabled-link",
+      speechText: "[link] disabled-link",
     }), // 3: disabled interactive
-    makeNode({ backendNodeId: 5, role: "heading", name: "見出し 2" }), // 4
-    makeNode({ backendNodeId: 6, role: "navigation" }), // 5: landmark
-    makeNode({ backendNodeId: 7, role: "button", isFocusable: true, name: "btn2" }), // 6
+    makeNode({
+      backendNodeId: 5,
+      role: "heading",
+      name: "見出し 2",
+      speechText: "[heading] 見出し 2",
+    }), // 4
+    makeNode({
+      backendNodeId: 6,
+      role: "navigation",
+      name: "nav-landmark",
+      speechText: "[navigation] nav-landmark",
+    }), // 5: landmark
+    makeNode({
+      backendNodeId: 7,
+      role: "button",
+      isFocusable: true,
+      name: "btn2",
+      speechText: "[button] btn2",
+    }), // 6
   ];
 }
 
@@ -169,7 +202,7 @@ describe("App", () => {
     unmount();
   });
 
-  test("h キーで次の見出しへ、H キーで前の見出しへジャンプする", async () => {
+  test("h で見出しフィルタモードに入り次の見出しへ移動する", async () => {
     const nodes = makeMixedNodes();
     const { lastFrame, stdin, unmount } = render(
       <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
@@ -177,41 +210,173 @@ describe("App", () => {
     await waitFrames();
     stdin.write("h");
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("2/7"); // index 1 (heading 1)
-    stdin.write("h");
-    await waitFrames();
-    expect(lastFrame() ?? "").toContain("5/7"); // index 4 (heading 2)
-    stdin.write("H");
-    await waitFrames();
-    expect(lastFrame() ?? "").toContain("2/7"); // 逆方向: index 1
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("見出しフィルタ");
+    expect(frame).toContain("全体 2/7"); // index 1 (見出し 1)
     unmount();
   });
 
-  test("D キーで次のランドマークへジャンプする", async () => {
+  test("d でランドマークフィルタモードに入り次のランドマークへ移動する", async () => {
     const nodes = makeMixedNodes();
     const { lastFrame, stdin, unmount } = render(
       <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
     );
     await waitFrames();
-    // cursor=0 (main landmark) から D で次の landmark (navigation, index 5) へ
-    stdin.write("D");
+    // cursor=0 (main landmark) から d で次の landmark (navigation, index 5) へ
+    stdin.write("d");
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("6/7");
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("ランドマークフィルタ");
+    expect(frame).toContain("全体 6/7");
     unmount();
   });
 
-  test("該当要素が無い場合はカーソル位置を維持する", async () => {
-    const nodes = makeNodes(5); // button のみ (heading / landmark なし)
+  test("該当要素が無い場合はカーソル位置を維持しフィルタモードにも入らない", async () => {
+    const nodes = makeNodes(5); // isFocusable=false の button のみ (heading / landmark / interactive 全て不一致)
     const { lastFrame, stdin, unmount } = render(
       <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
     );
     await waitFrames();
     stdin.write("h");
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("1/5");
-    stdin.write("D");
+    let frame = lastFrame() ?? "";
+    expect(frame).toContain("1/5");
+    expect(frame).not.toContain("フィルタ");
+    expect(frame).toContain("h 見出し"); // 通常モードのフッターのまま
+    stdin.write("d");
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("1/5");
+    frame = lastFrame() ?? "";
+    expect(frame).toContain("1/5");
+    expect(frame).not.toContain("フィルタ");
+    unmount();
+  });
+});
+
+describe("App filter mode", () => {
+  test("フィルタモードでは一覧が絞り込まれて表示される", async () => {
+    const nodes = makeMixedNodes();
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("h");
+    await waitFrames();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("見出しフィルタ");
+    expect(frame).toContain("見出し 1");
+    // 非見出しノードの name は表示されない
+    expect(frame).not.toContain("btn1");
+    expect(frame).not.toContain("main-landmark");
+    expect(frame).not.toContain("nav-landmark");
+    unmount();
+  });
+
+  test("フィルタモード中の ↓ はフィルタ済みリスト内を移動する", async () => {
+    const nodes = makeMixedNodes();
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("h"); // heading フィルタ進入 → cursor=1 (見出し 1)
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("見出しフィルタ 1/2");
+    stdin.write("\u001B[B"); // ↓
+    await waitFrames();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("見出しフィルタ 2/2");
+    expect(frame).toContain("全体 5/7"); // index 4 (見出し 2)
+    unmount();
+  });
+
+  test("→ で heading → landmark → interactive の順にフィルタ種別が切り替わる", async () => {
+    const nodes = makeMixedNodes();
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("h");
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("見出しフィルタ");
+    stdin.write("\u001B[C"); // →
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("ランドマークフィルタ");
+    stdin.write("\u001B[C"); // →
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("インタラクティブフィルタ");
+    stdin.write("\u001B[C"); // →
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("見出しフィルタ");
+    unmount();
+  });
+
+  test("← で逆方向にフィルタ種別が切り替わる", async () => {
+    const nodes = makeMixedNodes();
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("h");
+    await waitFrames();
+    stdin.write("\u001B[D"); // ←
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("インタラクティブフィルタ");
+    stdin.write("\u001B[D"); // ←
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("ランドマークフィルタ");
+    unmount();
+  });
+
+  test("Esc でフィルタを解除し通常モードに戻る", async () => {
+    const nodes = makeMixedNodes();
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("h"); // cursor=1 (見出し 1)
+    await waitFrames();
+    stdin.write("\u001B[B"); // ↓ → cursor=4 (見出し 2)
+    await waitFrames();
+    stdin.write("\u001B"); // Esc
+    await waitFrames();
+    const frame = lastFrame() ?? "";
+    expect(frame).not.toContain("フィルタ");
+    expect(frame).toContain("5/7"); // 解除後も cursor=4 を維持
+    expect(frame).toContain("h 見出し"); // 通常モードのフッター
+    // 解除後は全ノードが見える
+    expect(frame).toContain("main-landmark");
+    unmount();
+  });
+
+  test("g でフィルタ済みリストの先頭、G で末尾へ移動する", async () => {
+    const nodes = makeMixedNodes();
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("h"); // 見出しフィルタ 1/2
+    await waitFrames();
+    stdin.write("G");
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("見出しフィルタ 2/2");
+    stdin.write("g");
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("見出しフィルタ 1/2");
+    unmount();
+  });
+
+  test("フィルタモード中に Tab を押すとフィルタを解除し次のインタラクティブ要素へ移動する", async () => {
+    const nodes = makeMixedNodes();
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("h"); // cursor=1 (見出し 1)
+    await waitFrames();
+    stdin.write("\t"); // Tab
+    await waitFrames();
+    const frame = lastFrame() ?? "";
+    expect(frame).not.toContain("フィルタ"); // 通常モードに戻っている
+    expect(frame).toContain("3/7"); // index 2 (btn1) へ移動
     unmount();
   });
 });

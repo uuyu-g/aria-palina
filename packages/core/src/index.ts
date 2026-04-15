@@ -5,4 +5,4 @@ export { flattenAXTree, type FlattenOptions } from "./flatten.js";
 export { buildSpeechText, type SpeechInput } from "./speech.js";
 export { extractA11yTree } from "./extract.js";
 export { waitForNetworkIdle, type NetworkIdleOptions } from "./wait-for-network-idle.js";
-export { findNext, matchesKind, type NodeKind } from "./node-kind.js";
+export { cycleKind, filterByKind, findNext, matchesKind, type NodeKind } from "./node-kind.js";
