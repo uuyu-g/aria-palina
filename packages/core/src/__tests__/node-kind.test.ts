@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { findNext, matchesKind } from "../node-kind.js";
+import { cycleKind, filterByKind, findNext, matchesKind } from "../node-kind.js";
 import type { A11yNode } from "../types.js";
 
 function makeNode(partial: Partial<A11yNode> & Pick<A11yNode, "role">): A11yNode {
@@ -101,5 +101,45 @@ describe("findNext", () => {
 
   test("空配列に対しては常に -1 を返す", () => {
     expect(findNext([], 0, "heading", 1)).toBe(-1);
+  });
+});
+
+describe("filterByKind", () => {
+  const nodes: A11yNode[] = [
+    makeNode({ role: "main" }),
+    makeNode({ role: "heading", name: "h1" }),
+    makeNode({ role: "button", isFocusable: true, name: "btn1" }),
+    makeNode({ role: "link", isFocusable: true, state: { disabled: true }, name: "disabled" }),
+    makeNode({ role: "heading", name: "h2" }),
+    makeNode({ role: "navigation" }),
+  ];
+
+  test("指定した種別のノードだけを順序を保って返す", () => {
+    const headings = filterByKind(nodes, "heading");
+    expect(headings.map((n) => n.name)).toEqual(["h1", "h2"]);
+  });
+
+  test("該当するノードが無い場合は空配列を返す", () => {
+    const onlyHeadings: A11yNode[] = [makeNode({ role: "heading" })];
+    expect(filterByKind(onlyHeadings, "landmark")).toEqual([]);
+  });
+
+  test("disabled なフォーカス可能要素は interactive から除外される", () => {
+    const interactives = filterByKind(nodes, "interactive");
+    expect(interactives.map((n) => n.name)).toEqual(["btn1"]);
+  });
+});
+
+describe("cycleKind", () => {
+  test("順方向で heading → landmark → interactive → heading と循環する", () => {
+    expect(cycleKind("heading", 1)).toBe("landmark");
+    expect(cycleKind("landmark", 1)).toBe("interactive");
+    expect(cycleKind("interactive", 1)).toBe("heading");
+  });
+
+  test("逆方向で heading → interactive → landmark → heading と循環する", () => {
+    expect(cycleKind("heading", -1)).toBe("interactive");
+    expect(cycleKind("interactive", -1)).toBe("landmark");
+    expect(cycleKind("landmark", -1)).toBe("heading");
   });
 });

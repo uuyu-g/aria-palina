@@ -57,3 +57,27 @@ export function findNext(
   }
   return -1;
 }
+
+/**
+ * `nodes` のうち `kind` に一致するものだけを抽出した新しい配列を返す。
+ * 順序は保存される。TUI のフィルタモードで「絞り込まれた一覧」を作るために使う。
+ */
+export function filterByKind(nodes: readonly A11yNode[], kind: NodeKind): A11yNode[] {
+  return nodes.filter((node) => matchesKind(node, kind));
+}
+
+/** フィルタ切替の巡回順。`cycleKind` の基礎となる固定配列。 */
+const KIND_CYCLE: readonly NodeKind[] = ["heading", "landmark", "interactive"];
+
+/**
+ * TUI のフィルタモードで ←/→ による種別切替を行うときの巡回ロジック。
+ * 順方向 (`direction=1`) は heading → landmark → interactive → heading と循環する。
+ */
+export function cycleKind(current: NodeKind, direction: 1 | -1): NodeKind {
+  const index = KIND_CYCLE.indexOf(current);
+  const length = KIND_CYCLE.length;
+  // indexOf が -1 を返すことは型的にあり得ないが、防御的に 0 扱いにする。
+  const base = index < 0 ? 0 : index;
+  const nextIndex = (base + direction + length) % length;
+  return KIND_CYCLE[nextIndex] as NodeKind;
+}
