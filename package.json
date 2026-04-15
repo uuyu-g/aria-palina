@@ -9,7 +9,7 @@
     "lint": "vp lint",
     "fmt": "vp fmt",
     "test": "vp test",
-    "dev": "node packages/cli/dist/bin.mjs"
+    "dev": "pnpm build && node packages/cli/dist/bin.mjs"
   },
   "devDependencies": {
     "typescript": "^6.0.2",
