@@ -12,4 +12,3 @@ export { App, type AppProps } from "./components/App.js";
 export { VirtualList, type VirtualListProps } from "./components/VirtualList.js";
 export { NodeRow, type NodeRowProps } from "./components/NodeRow.js";
 export { computeWindow, type VirtualWindow, type VirtualWindowInput } from "./virtual-window.js";
-export { adaptCDPSession, type MinimalCDPSession } from "./playwright-cdp-adapter.js";

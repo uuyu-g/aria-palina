@@ -15,22 +15,27 @@
 - **`@aria-palina/core`**:
   - 環境非依存の純粋なロジック群。CDP クライアント（インターフェース）を受け取り、AXTree の取得、平坦化、テキスト変換を行う。
 - **`@aria-palina/cli`**:
-  - Node.js CLI ツール。Playwright を内包し、`core` に Playwright 経由の `CDPSession` を注入して動作する。
-- **`@aria-palina/tui`**:
-  - Ink (React) ベースのターミナル UI。`core` を利用し、インタラクティブな描画とキーイベント処理を担う。
+  - `palina` バイナリを提供する Node.js パッケージ。Playwright を内包し、`core` に Playwright 経由の `CDPSession` を注入する。
+  - **デフォルトは CLI ワンショットモード**（NVDA 風テキストを stdout 出力）、`--tui` フラグで `src/tui/` サブツリーを dynamic import して Ink (React) ベースの対話 TUI モードに切り替わる。`vitest` / `vitest run` と同じ「単一パッケージ・モードフラグ」モデル。
+  - TUI 用の公開型・コンポーネントはサブパスエクスポート `@aria-palina/cli/tui` から参照できる。
 - **`@aria-palina/extension`**:
   - Chrome DevTools 拡張機能。`chrome.debugger` API 経由の CDP クライアントを作成し、`core` に注入して動作する。
 - **`@aria-palina/test-utils`**:
   - Playwright / Vitest 向けのアサーションマッチャー群。マッチャー API はブランド名に揃え、`toHavePalinaText` / `toHavePalinaTextSequence` として提供する (エクスポートは `palinaMatchers`)。
 
+> **Note:** 初期計画では CLI と TUI を `@aria-palina/cli` / `@aria-palina/tui` の 2
+> パッケージに分離していたが、`vitest` のように**単一パッケージ + モードフラグ**の
+> 方が概念的に一貫し、CDP アダプタ等の重複も解消できるため、実装過程で
+> `@aria-palina/cli` に統合した。再編の経緯は `docs/progress.md` を参照。
+
 ### 1.2 ユーザー向けバイナリ配布 (Distribution)
 
-CLI モードと TUI モードはエンドユーザーには **単一の `palina` コマンド** として提供する。内部的には `@aria-palina/cli` と `@aria-palina/tui` が DI を介して個別パッケージとして存在するが、公開するエントリポイントは 1 つだけにする。
+CLI モードと TUI モードはエンドユーザーには **単一の `palina` コマンド** として提供する。
 
-- **配布パッケージ:** `aria-palina`（unscoped の umbrella パッケージ）が `palina` バイナリを `bin` として宣言する。
+- **配布パッケージ:** `@aria-palina/cli` が `palina` バイナリを `bin` として宣言する。npm 公開時には unscoped alias `aria-palina` から `@aria-palina/cli` を re-export する薄いラッパを用意する（Phase 9）。
 - **モード切替:** デフォルトは CLI ワンショットモード。`--tui` フラグで TUI モードに遷移する。
 - **共通フラグ:** `--url`, `--headed` は両モードで共通。`--format` / `--indent` / `--color` は CLI モード専用。
-- umbrella パッケージは `@aria-palina/cli` と `@aria-palina/tui` を依存関係に含め、`--tui` 判定後に対応するエントリを動的 import する（起動時間短縮のため）。
+- `--tui` 判定時に `./tui/index.js` を動的 import することで、ワンショット実行時の起動時間を Ink/React のロード分だけ短縮する。
 
 ## 2. データ構造とアルゴリズム (Data Structures & Algorithms)
 
@@ -98,7 +103,7 @@ export function formatTextOutput(nodes: A11yNode[], isTTY: boolean): string {
 数千行の `A11yNode` 配列を Ink (React) にそのまま渡すと、毎フレームの再レンダリングでターミナルがフリーズします。必ず仮想スクロールを実装します。
 
 ```tsx
-// @aria-palina/tui/src/components/VirtualList.tsx
+// @aria-palina/cli/src/tui/components/VirtualList.tsx
 // 概念実証コード
 const VirtualList = ({ nodes, cursorIndex }) => {
   const terminalHeight = process.stdout.rows || 24;

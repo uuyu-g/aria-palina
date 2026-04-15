@@ -1,7 +1,7 @@
 {
   "name": "@aria-palina/cli",
   "version": "0.0.1",
-  "description": "aria-palina ワンショット CLI。Playwright 経由で AOM を取得し、NVDA 風のテキストを stdout に出力する。",
+  "description": "aria-palina CLI + TUI。Playwright 経由で AOM を取得し、デフォルトは NVDA 風テキストを stdout に出力 (ワンショット)、--tui フラグで Ink ベースの対話モードに切り替わる。",
   "bin": {
     "palina": "./dist/bin.mjs"
   },
@@ -16,14 +16,23 @@
     ".": {
       "types": "./dist/index.d.mts",
       "import": "./dist/index.mjs"
+    },
+    "./tui": {
+      "types": "./dist/tui/index.d.mts",
+      "import": "./dist/tui/index.mjs"
     }
   },
   "scripts": {
-    "build": "vp pack --dts --clean src/index.ts src/bin.ts"
+    "build": "vp pack --dts --clean src/index.ts src/bin.ts src/tui/index.ts"
   },
   "dependencies": {
     "@aria-palina/core": "workspace:*",
-    "@aria-palina/tui": "workspace:*",
-    "playwright-core": "~1.56.0"
+    "ink": "^5.2.1",
+    "playwright-core": "~1.56.0",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "ink-testing-library": "^4.0.0"
   }
 }

@@ -3,9 +3,9 @@
  * 応答を `flattenAXTree` で平坦化して `A11yNode[]` を返すエントリーポイント。
  *
  * ここが `@aria-palina/core` の「外から叩く側」の入り口であり、
- * `@aria-palina/cli` / `@aria-palina/tui` / `@aria-palina/extension` の
- * 各アダプターはそれぞれ異なる `ICDPClient` 実装 (Playwright `CDPSession` /
- * `chrome.debugger` API / ...) をここに注入する。
+ * `@aria-palina/cli` / `@aria-palina/extension` の各アダプターはそれぞれ
+ * 異なる `ICDPClient` 実装 (Playwright `CDPSession` / `chrome.debugger`
+ * API / ...) をここに注入する。
  *
  * なお `Accessibility.enable` の発行は行わない。CDP 仕様上 `getFullAXTree` は
  * `Accessibility` ドメインを明示的に enable しなくても動作するため、アダプタ

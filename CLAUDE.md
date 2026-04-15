@@ -28,8 +28,7 @@
 aria-palina/
 ├── packages/
 │   ├── core/          # @aria-palina/core  — 環境非依存コアエンジン
-│   ├── cli/           # @aria-palina/cli   — Playwright ワンショット CLI
-│   └── tui/           # @aria-palina/tui   — Ink (React) ベース TUI
+│   └── cli/           # @aria-palina/cli   — Playwright one-shot CLI + Ink TUI (--tui)
 ├── docs/              # 仕様書・進捗トラッキング
 ├── .github/workflows/ # CI (GitHub Actions)
 ├── package.json       # ルート (private, pnpm workspaces)
@@ -74,18 +73,41 @@ export { waitForNetworkIdle, type NetworkIdleOptions } from "./wait-for-network-
 
 ### `@aria-palina/cli` (packages/cli)
 
-Playwright 経由でブラウザの AOM を取得し、NVDA 風テキストを stdout に出力するワンショット CLI。
+`palina` バイナリを提供する単一パッケージ。デフォルトは Playwright ワンショット
+CLI (NVDA 風テキストを stdout に出力)、`--tui` フラグで Ink (React) ベースの
+対話 TUI にモード切替する。vitest の `vitest` / `vitest run` と同じ「単一
+パッケージ・モードフラグ」モデル。
 
-| モジュール                      | 責務                                                          |
-| ------------------------------- | ------------------------------------------------------------- |
-| `src/args.ts`                   | `node:util.parseArgs` による argv 解析 (tri-state オプション) |
-| `src/colorize.ts`               | role ベースの ANSI カラーライザ (外部依存なし)                |
-| `src/formatter.ts`              | text/json 出力フォーマッタ (TTY 判定連動)                     |
-| `src/playwright-cdp-adapter.ts` | Playwright `CDPSession` → `ICDPClient` アダプター             |
-| `src/run.ts`                    | `runCli(argv, io?)` — ブラウザ起動→AOM 取得→整形→出力         |
-| `src/bin.ts`                    | `#!/usr/bin/env node` shebang エントリ                        |
+#### CLI モード (トップレベル)
 
-**公開 API** (`src/index.ts`):
+| モジュール                      | 責務                                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `src/args.ts`                   | `node:util.parseArgs` による argv 解析 (tri-state オプション)                                          |
+| `src/colorize.ts`               | role ベースの ANSI カラーライザ (外部依存なし)                                                         |
+| `src/formatter.ts`              | text/json 出力フォーマッタ (TTY 判定連動)                                                              |
+| `src/playwright-cdp-adapter.ts` | Playwright `CDPSession` → `ICDPClient` アダプター (CLI/TUI 共用)                                       |
+| `src/run.ts`                    | `runCli(argv, io?)` — ブラウザ起動→AOM 取得→整形→出力。`--tui` 時は `./tui/index.js` を dynamic import |
+| `src/bin.ts`                    | `#!/usr/bin/env node` shebang エントリ                                                                 |
+
+#### TUI モード (`src/tui/`)
+
+Ink (React) ベースのインタラクティブ TUI。`palina --tui` で起動する。
+`runCli` が `--tui` 判定後に `./tui/index.js` を dynamic import するため、
+ワンショット実行時は Ink/React/tui サブツリーは一切ロードされない。
+
+| モジュール                           | 責務                                                                        |
+| ------------------------------------ | --------------------------------------------------------------------------- |
+| `src/tui/virtual-window.ts`          | `computeWindow()` — 仮想スクロール可視レンジ算出 (純粋関数、末尾前詰め補正) |
+| `src/tui/role-style.ts`              | `roleTextStyle(role)` — Ink `<Text>` props (color / bold) マッピング        |
+| `src/tui/components/NodeRow.tsx`     | 1 行描画 (`React.memo` でリレンダ抑制)                                      |
+| `src/tui/components/VirtualList.tsx` | `computeWindow` 結果で slice して可視分のみ描画                             |
+| `src/tui/components/App.tsx`         | ヘッダー / VirtualList / フッターの 3 段。`useInput` でキーバインド処理     |
+| `src/tui/run.ts`                     | `runTui(args, io)` — ブラウザ起動→AOM 取得→Ink render→`waitUntilExit`       |
+| `src/tui/index.ts`                   | TUI サブパス公開 API バレル (`@aria-palina/cli/tui`)                        |
+
+**公開 API**:
+
+`@aria-palina/cli` ルート (`src/index.ts`):
 
 ```ts
 export { runCli } from "./run.js";
@@ -95,24 +117,7 @@ export { parseCliArgs, type ParseResult } from "./args.js";
 export { adaptCDPSession, type MinimalCDPSession } from "./playwright-cdp-adapter.js";
 ```
 
-**依存関係**: `@aria-palina/core@workspace:*`, `@aria-palina/tui@workspace:*` (dynamic import), `playwright-core@~1.56.0`
-**バイナリ**: `palina` → `./dist/bin.mjs`
-
-### `@aria-palina/tui` (packages/tui)
-
-Ink (React) ベースのインタラクティブ TUI。Playwright 経由で AOM を取得後、仮想スクロールで数千ノードを遅延なく描画する。`palina --tui` で起動する。
-
-| モジュール                       | 責務                                                                        |
-| -------------------------------- | --------------------------------------------------------------------------- |
-| `src/virtual-window.ts`          | `computeWindow()` — 仮想スクロール可視レンジ算出 (純粋関数、末尾前詰め補正) |
-| `src/role-style.ts`              | `roleTextStyle(role)` — Ink `<Text>` props (color / bold) マッピング        |
-| `src/playwright-cdp-adapter.ts`  | `MinimalCDPSession` → `ICDPClient` (循環依存回避のため CLI とは別に保持)    |
-| `src/components/NodeRow.tsx`     | 1 行描画 (`React.memo` でリレンダ抑制)                                      |
-| `src/components/VirtualList.tsx` | `computeWindow` 結果で slice して可視分のみ描画                             |
-| `src/components/App.tsx`         | ヘッダー / VirtualList / フッターの 3 段。`useInput` でキーバインド処理     |
-| `src/run.ts`                     | `runTui(args, io)` — ブラウザ起動→AOM 取得→Ink render→`waitUntilExit`       |
-
-**公開 API** (`src/index.ts`):
+`@aria-palina/cli/tui` サブパス (`src/tui/index.ts`):
 
 ```ts
 export {
@@ -129,21 +134,21 @@ export { App, type AppProps } from "./components/App.js";
 export { VirtualList, type VirtualListProps } from "./components/VirtualList.js";
 export { NodeRow, type NodeRowProps } from "./components/NodeRow.js";
 export { computeWindow, type VirtualWindow, type VirtualWindowInput } from "./virtual-window.js";
-export { adaptCDPSession, type MinimalCDPSession } from "./playwright-cdp-adapter.js";
 ```
 
 **依存関係**: `@aria-palina/core@workspace:*`, `ink@^5`, `react@^18`, `playwright-core@~1.56.0`
-**キーバインド (Phase 4)**: `↑`/`↓`/`j`/`k` (行移動), `PageUp`/`PageDown` (ページ移動), `g`/`G` (先頭/末尾), `q`/`Ctrl+C` (終了)。`Tab`/`H`/`D` は Phase 5 で追加予定。
+**バイナリ**: `palina` → `./dist/bin.mjs`
+**キーバインド**: `↑`/`↓`/`j`/`k` (行移動), `PageUp`/`PageDown` (ページ移動), `g`/`G` (先頭/末尾), `Tab`/`Shift+Tab` (インタラクティブ), `h`/`H` (見出し), `D` (ランドマーク), `q`/`Ctrl+C` (終了)。
 
 ### 将来のパッケージ (未実装)
 
 DD §1.1 で計画されているが、まだ作成されていないパッケージ:
 
-| パッケージ                | Phase | 概要                                                  |
-| ------------------------- | ----- | ----------------------------------------------------- |
-| `@aria-palina/extension`  | 7     | Chrome DevTools 拡張 (Manifest V3)                    |
-| `@aria-palina/test-utils` | 8     | Playwright カスタムマッチャー (`toHavePalinaText` 等) |
-| `aria-palina` (umbrella)  | 9     | 統合バイナリ `palina` の公開パッケージ                |
+| パッケージ                | Phase | 概要                                                          |
+| ------------------------- | ----- | ------------------------------------------------------------- |
+| `@aria-palina/extension`  | 7     | Chrome DevTools 拡張 (Manifest V3)                            |
+| `@aria-palina/test-utils` | 8     | Playwright カスタムマッチャー (`toHavePalinaText` 等)         |
+| `aria-palina` (umbrella)  | 9     | npm 公開用の unscoped alias (`@aria-palina/cli` を re-export) |
 
 ---
 
@@ -243,7 +248,11 @@ vp install <pkg>                     # 依存追加
 - `formatter.test.ts` — text/json 出力フォーマット
 - `playwright-cdp-adapter.test.ts` — CDP アダプター透過性
 - `run.test.ts` — CLI 実行フロー (fake BrowserFactory 注入)
-- `helpers.ts` — 共有テストユーティリティ
+- `tui-run.test.ts` — TUI 実行フロー (非 TTY / role フィルタ / renderer 注入)
+- `tui-app.test.tsx` — Ink App のキーバインド挙動 (`ink-testing-library`)
+- `tui-virtual-list.test.tsx` — 仮想スクロール描画検証
+- `tui-virtual-window.test.ts` — `computeWindow` の純粋関数テスト
+- `helpers.ts` — 共有テストユーティリティ (CLI/TUI 両方で使う)
 
 ### 🌐 テストケース名は日本語で書く
 

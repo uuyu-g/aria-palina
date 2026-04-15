@@ -20,20 +20,6 @@ importers:
       '@aria-palina/core':
         specifier: workspace:*
         version: link:../core
-      '@aria-palina/tui':
-        specifier: workspace:*
-        version: link:../tui
-      playwright-core:
-        specifier: ~1.56.0
-        version: 1.56.1
-
-  packages/core: {}
-
-  packages/tui:
-    dependencies:
-      '@aria-palina/core':
-        specifier: workspace:*
-        version: link:../core
       ink:
         specifier: ^5.2.1
         version: 5.2.1(@types/react@18.3.28)(react@18.3.1)
@@ -50,6 +36,8 @@ importers:
       ink-testing-library:
         specifier: ^4.0.0
         version: 4.0.0(@types/react@18.3.28)
+
+  packages/core: {}
 
 packages:
 

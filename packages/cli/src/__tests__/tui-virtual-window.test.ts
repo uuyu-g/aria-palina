@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import { computeWindow } from "../virtual-window.js";
+import { computeWindow } from "../tui/virtual-window.js";
 
 describe("computeWindow", () => {
   test("先頭付近ではカーソルを中央化できず start=0 で固定される", () => {

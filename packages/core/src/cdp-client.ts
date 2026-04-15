@@ -3,9 +3,8 @@
  *
  * `@aria-palina/core` はこのインターフェースに対してのみ依存し、
  * 特定の実装（Playwright `CDPSession` / puppeteer / `chrome.debugger` API）に
- * 依存しない。各環境向けパッケージ (`@aria-palina/cli`, `@aria-palina/tui`,
- * `@aria-palina/extension`) が本インターフェースを満たすアダプターを実装し、
- * `core` に注入する。
+ * 依存しない。各環境向けパッケージ (`@aria-palina/cli`, `@aria-palina/extension`)
+ * が本インターフェースを満たすアダプターを実装し、`core` に注入する。
  *
  * このインターフェースの導入が、`aria-palina` 全体のコードを Node.js と
  * ブラウザ環境の両方で 100% 再利用可能にするための技術的ハイライトである。

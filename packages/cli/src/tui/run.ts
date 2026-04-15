@@ -1,16 +1,15 @@
 import type { A11yNode } from "@aria-palina/core";
 import { extractA11yTree, waitForNetworkIdle } from "@aria-palina/core";
 import { createElement } from "react";
+import type { MinimalCDPSession } from "../playwright-cdp-adapter.js";
+import { adaptCDPSession } from "../playwright-cdp-adapter.js";
 import { App } from "./components/App.js";
-import type { MinimalCDPSession } from "./playwright-cdp-adapter.js";
-import { adaptCDPSession } from "./playwright-cdp-adapter.js";
 
 /**
  * TUI が利用する CLI 引数の最小形。
  *
- * `@aria-palina/cli` の `CliArgs` と構造的に一致する部分集合。依存を
- * 循環させないため、TUI は CliArgs を直接 import せず、構造型を再定義
- * する。CLI → TUI 側は bin でフィールド名ベースに橋渡しする。
+ * `CliArgs` (../args.ts) の構造的部分集合。テストが巨大な CliArgs を
+ * 組み立てる必要がないよう、必要なフィールドだけの型として公開している。
  */
 export interface TuiArgs {
   url: string;

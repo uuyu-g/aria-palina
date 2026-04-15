@@ -15,8 +15,9 @@ export type BrowserFactory = (opts: { headed: boolean }) => Promise<BrowserHandl
 /**
  * `--tui` フラグ時に実行される TUI ランナー。
  *
- * Phase 4 で `@aria-palina/tui` の `runTui` を dynamic import して差し込む。
- * テストでは fake を注入する。
+ * 既定では `./tui/index.js` (同一パッケージ内のサブツリー) を dynamic import
+ * して `runTui` を差し込む。ワンショット実行時は Ink/React をロードしない
+ * 設計。テストでは fake を注入する。
  */
 export type TuiRunner = (args: CliArgs) => Promise<number>;
 
@@ -25,7 +26,7 @@ export interface RunIO {
   stderr: { write(chunk: string): boolean };
   isTTY: boolean;
   browserFactory: BrowserFactory;
-  /** --tui 指定時に呼び出されるランナー。未指定時は `@aria-palina/tui` を dynamic import する。 */
+  /** --tui 指定時に呼び出されるランナー。未指定時は `./tui/index.js` を dynamic import する。 */
   tuiRunner?: TuiRunner;
 }
 
@@ -53,7 +54,7 @@ function isBrowserNotFound(error: unknown): boolean {
 }
 
 async function defaultTuiRunner(args: CliArgs): Promise<number> {
-  const mod = await import("@aria-palina/tui");
+  const mod = await import("./tui/index.js");
   return mod.runTui(args, mod.defaultTuiIO());
 }
 
