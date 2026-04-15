@@ -6,8 +6,8 @@ import type {
   TuiArgs,
   TuiRenderer,
   TuiRenderResult,
-} from "../run.js";
-import { runTui } from "../run.js";
+} from "../tui/run.js";
+import { runTui } from "../tui/run.js";
 import type { MinimalCDPSession } from "../playwright-cdp-adapter.js";
 import { createWritableBuffer, makeNodes } from "./helpers.js";
 

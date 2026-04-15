@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 import { render } from "ink-testing-library";
-import { VirtualList } from "../components/VirtualList.js";
+import { VirtualList } from "../tui/components/VirtualList.js";
 import { makeNodes } from "./helpers.js";
 
 describe("VirtualList", () => {

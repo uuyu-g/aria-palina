@@ -23,8 +23,8 @@
 | 1 | モノレポ基盤と DI Core エンジン | ✅ Done | `packages/core/src/{cdp-client,types,index}.ts` |
 | 2 | AOM 抽出・平坦化ロジック (Core) | ✅ Done | `packages/core/src/{ax-protocol,flatten,speech,extract}.ts` + `__tests__/` |
 | 3 | Playwright 統合と ワンショット CLI | ✅ Done | `packages/cli/src/{args,colorize,formatter,playwright-cdp-adapter,run,bin,index}.ts` + `__tests__/` |
-| 4 | Ink TUI 基盤と パフォーマンス最適化 | ✅ Done | `packages/tui/src/{run,virtual-window,role-style,playwright-cdp-adapter,index}.ts` + `components/{App,VirtualList,NodeRow}.tsx` + `__tests__/` |
-| 5 | デュアルナビゲーション実装 (TUI) | ✅ Done | `packages/core/src/node-kind.ts` (`findNext` / `filterByKind` / `cycleKind`) + `packages/tui/src/components/App.tsx` (Tab / モーダルフィルタ `h`・`d`・←/→・Esc) + `__tests__/` |
+| 4 | Ink TUI 基盤と パフォーマンス最適化 | ✅ Done | `packages/cli/src/tui/{run,virtual-window,role-style,index}.ts` + `components/{App,VirtualList,NodeRow}.tsx` + `__tests__/tui-*.{ts,tsx}` (※旧 `@aria-palina/tui` は CLI に統合済み。下記「CLI/TUI パッケージ統合」参照) |
+| 5 | デュアルナビゲーション実装 (TUI) | ✅ Done | `packages/core/src/node-kind.ts` (`findNext` / `filterByKind` / `cycleKind`) + `packages/cli/src/tui/components/App.tsx` (Tab / モーダルフィルタ `h`・`d`・←/→・Esc) + `__tests__/` |
 | 6 | Matrix View (Headed モード同期) | ⏳ Pending | — |
 | 7 | Chrome Extension (DevTools Panel) | ⏳ Pending | — |
 | 8 | Test Utilities (BDD) | ⏳ Pending | — |
@@ -378,10 +378,75 @@ Phase 5 完了後に、以下の理由でキーバインド体系を再設計し
 ### 実装差分
 
 - **`@aria-palina/core`**: `filterByKind(nodes, kind)` と `cycleKind(current, direction)` の 2 つの純粋ヘルパーを `node-kind.ts` に追加。既存の `matchesKind` / `findNext` をそのまま再利用。
-- **`@aria-palina/tui`**: `App.tsx` に `filterKind: NodeKind | null` 状態と、`visibleNodes` / `visibleToFull` / `visibleCursor` の `useMemo` 派生値を導入。`cursor` はフル配列のインデックスを維持するため `Esc` 復元は `setFilterKind(null)` だけで済む。ヘッダーはフィルタ中に `[見出し]` / `[ランドマーク]` / `[インタラクティブ]` の種別ラベルのみを表示する (「フィルタ」の語も位置表記も冗長なので省略)。該当要素が無いときは**フィルタモードに入らない** (`findNext` が `-1` を返した場合の no-op ガード)。
+- **`@aria-palina/cli/tui`**: `App.tsx` に `filterKind: NodeKind | null` 状態と、`visibleNodes` / `visibleToFull` / `visibleCursor` の `useMemo` 派生値を導入。`cursor` はフル配列のインデックスを維持するため `Esc` 復元は `setFilterKind(null)` だけで済む。ヘッダーはフィルタ中に `[見出し]` / `[ランドマーク]` / `[インタラクティブ]` の種別ラベルのみを表示する (「フィルタ」の語も位置表記も冗長なので省略)。該当要素が無いときは**フィルタモードに入らない** (`findNext` が `-1` を返した場合の no-op ガード)。
 - **UI**: フッターヘルプをモード別に切り替え (`↑/↓ 移動 Tab フォーカス h 見出し d ランドマーク …` ↔ `↑/↓ 移動 ←/→ フィルタ切替 … Esc 解除 …`)。
 
 ### テスト
 
 - `packages/core/src/__tests__/node-kind.test.ts` — `filterByKind` (順序保存 / 空配列 / disabled 除外) と `cycleKind` (順・逆方向巡回) の純粋関数テストを追加。
-- `packages/tui/src/__tests__/app.test.tsx` — 既存の `H` / 大文字 `D` テストを削除し、`d` (小文字) によるランドマークフィルタ進入、`describe("App filter mode", ...)` に 7 本の新規テスト (絞り込み表示・↑↓ 挙動・←→ 巡回・Esc 解除・g/G・Tab 解除) を追加。全 180 件緑。
+- `packages/cli/src/__tests__/tui-app.test.tsx` — 既存の `H` / 大文字 `D` テストを削除し、`d` (小文字) によるランドマークフィルタ進入、`describe("App filter mode", ...)` に 7 本の新規テスト (絞り込み表示・↑↓ 挙動・←→ 巡回・Esc 解除・g/G・Tab 解除) を追加。全 180 件緑。
+
+## Phase 間のリファクタリング: CLI/TUI パッケージ統合
+
+### スコープ
+
+DD §1.1 / §1.2 初期案の 「`@aria-palina/cli` + `@aria-palina/tui` の 2 パッケージ + Phase 9
+で umbrella `aria-palina`」 という 3 段構造を、`vitest` / `vitest run` に倣って
+**単一パッケージ + モードフラグ** 構造に再編した。
+
+- `packages/tui/` 配下を `packages/cli/src/tui/` に吸収。
+- `playwright-cdp-adapter.ts` の二重保持 (循環依存回避のために両パッケージに同一コードを置いていた) を解消し、CLI 側の単一ファイルに一本化。
+- `@aria-palina/tui` は workspace から削除。`ink` / `react` / `@types/react` / `ink-testing-library` の依存は `@aria-palina/cli` に移管。
+- `runCli` の TUI dispatch は `import("@aria-palina/tui")` → `import("./tui/index.js")` に差し替え。ワンショット実行時に Ink/React がロードされない遅延ロード特性は維持。
+- TUI 公開 API は `@aria-palina/cli/tui` サブパスエクスポート (`packages/cli/src/tui/index.ts`) から参照する形に整理。
+
+### 動機
+
+- `palina` は AOM ツリービューアという単一ツールで、one-shot / 対話は出力モード違いに過ぎない (vitest と同じ構図)。
+- 旧構造では CDP アダプタを **循環依存回避のためだけに** 同一コードで二重保持しており、境界コストが機能価値を下回っていた。
+- Phase 7 Chrome Extension は `chrome.debugger` + DOM/React を使う別実装で、Ink 製 TUI の再利用予定は DD にも存在しないため、TUI を独立パッケージにしておく分離利得が弱い。
+- Phase 9 の umbrella も `@aria-palina/cli` を npm 公開する薄い alias に簡略化できる。
+
+### 影響範囲
+
+| 変更 | ファイル |
+| ---- | -------- |
+| ソース移設 | `packages/tui/src/**` → `packages/cli/src/tui/**` |
+| テスト移設 | `packages/tui/src/__tests__/{app,run,virtual-list,virtual-window}.test.*` → `packages/cli/src/__tests__/tui-*.{ts,tsx}` |
+| 公開 API | `@aria-palina/cli` ルート (`src/index.ts`) + 新サブパス `@aria-palina/cli/tui` (`src/tui/index.ts`) |
+| ビルド | `packages/cli/package.json` の `build` エントリに `src/tui/index.ts` を追加。`exports` に `./tui` を追加 |
+| 依存 | `packages/cli/package.json` の `dependencies` から `@aria-palina/tui` 削除、`ink` / `react` を追加 |
+| tsconfig | `packages/cli/tsconfig.json` に `"jsx": "react-jsx"` を追加 (.tsx を含むため) |
+| DD | §1.1 / §1.2 を単一パッケージ + モードフラグ前提に改訂 (§4 ロードマップは不変) |
+| CLAUDE.md | モジュール一覧・テストファイル一覧・配布想定を CLI 統合構造に更新 |
+
+### 検証
+
+- `vp test` — 全テスト緑 (`packages/cli/src/__tests__/tui-*.{ts,tsx}` 含む)。
+- `vp check` — lint / format 緑。
+- `vp run -F './packages/*' build` — `@aria-palina/core` + `@aria-palina/cli` が緑。`packages/cli/dist/` に `index.mjs` / `bin.mjs` / `tui/index.mjs` の 3 エントリが生成される。
+
+### 公開 API 変更
+
+`@aria-palina/cli` (`src/index.ts`) は従来のまま (`runCli`, `CliArgs`, `adaptCDPSession` 等)。
+
+`@aria-palina/cli/tui` サブパス (`src/tui/index.ts`) から以下を新規エクスポート:
+
+```ts
+export {
+  runTui,
+  defaultTuiIO,
+  type BrowserFactory,
+  type BrowserHandle,
+  type TuiArgs,
+  type TuiIO,
+  type TuiRenderer,
+  type TuiRenderResult,
+} from "./run.js";
+export { App, type AppProps } from "./components/App.js";
+export { VirtualList, type VirtualListProps } from "./components/VirtualList.js";
+export { NodeRow, type NodeRowProps } from "./components/NodeRow.js";
+export { computeWindow, type VirtualWindow, type VirtualWindowInput } from "./virtual-window.js";
+```
+
+`@aria-palina/tui` は workspace ごと削除されたため存在しない。`adaptCDPSession` は CLI 側の公開 API (`@aria-palina/cli`) から一本化して参照する。

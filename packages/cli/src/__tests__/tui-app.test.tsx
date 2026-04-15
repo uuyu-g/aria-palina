@@ -1,7 +1,7 @@
 import type { A11yNode } from "@aria-palina/core";
 import { describe, expect, test } from "vite-plus/test";
 import { render } from "ink-testing-library";
-import { App } from "../components/App.js";
+import { App } from "../tui/components/App.js";
 import { makeNode, makeNodes } from "./helpers.js";
 
 /** フィルタモード検証用に混合種別のノード列を作成する。 */
