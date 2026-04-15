@@ -212,7 +212,7 @@ describe("App", () => {
     await waitFrames();
     const frame = lastFrame() ?? "";
     expect(frame).toContain("見出しフィルタ");
-    expect(frame).toContain("全体 2/7"); // index 1 (見出し 1)
+    expect(frame).toContain("> [heading] 見出し 1"); // 選択行が見出し 1
     unmount();
   });
 
@@ -227,7 +227,7 @@ describe("App", () => {
     await waitFrames();
     const frame = lastFrame() ?? "";
     expect(frame).toContain("ランドマークフィルタ");
-    expect(frame).toContain("全体 6/7");
+    expect(frame).toContain("> [navigation] nav-landmark"); // 選択行が navigation
     unmount();
   });
 
@@ -277,14 +277,12 @@ describe("App filter mode", () => {
       <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
     );
     await waitFrames();
-    stdin.write("h"); // heading フィルタ進入 → cursor=1 (見出し 1)
+    stdin.write("h"); // heading フィルタ進入 → 選択=見出し 1
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("見出しフィルタ 1/2");
+    expect(lastFrame() ?? "").toContain("> [heading] 見出し 1");
     stdin.write("\u001B[B"); // ↓
     await waitFrames();
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("見出しフィルタ 2/2");
-    expect(frame).toContain("全体 5/7"); // index 4 (見出し 2)
+    expect(lastFrame() ?? "").toContain("> [heading] 見出し 2");
     unmount();
   });
 
@@ -353,14 +351,14 @@ describe("App filter mode", () => {
       <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
     );
     await waitFrames();
-    stdin.write("h"); // 見出しフィルタ 1/2
+    stdin.write("h"); // 見出しフィルタ進入 (選択=見出し 1)
     await waitFrames();
     stdin.write("G");
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("見出しフィルタ 2/2");
+    expect(lastFrame() ?? "").toContain("> [heading] 見出し 2");
     stdin.write("g");
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("見出しフィルタ 1/2");
+    expect(lastFrame() ?? "").toContain("> [heading] 見出し 1");
     unmount();
   });
 

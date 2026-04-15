@@ -378,7 +378,7 @@ Phase 5 完了後に、以下の理由でキーバインド体系を再設計し
 ### 実装差分
 
 - **`@aria-palina/core`**: `filterByKind(nodes, kind)` と `cycleKind(current, direction)` の 2 つの純粋ヘルパーを `node-kind.ts` に追加。既存の `matchesKind` / `findNext` をそのまま再利用。
-- **`@aria-palina/tui`**: `App.tsx` に `filterKind: NodeKind | null` 状態と、`visibleNodes` / `visibleToFull` / `visibleCursor` の `useMemo` 派生値を導入。`cursor` はフル配列のインデックスを維持するため `Esc` 復元は `setFilterKind(null)` だけで済む。ヘッダーは `[見出しフィルタ 2/3 · 全体 5/42]` のように絞り込みと全体の両方の位置を表示。該当要素が無いときは**フィルタモードに入らない** (`findNext` が `-1` を返した場合の no-op ガード)。
+- **`@aria-palina/tui`**: `App.tsx` に `filterKind: NodeKind | null` 状態と、`visibleNodes` / `visibleToFull` / `visibleCursor` の `useMemo` 派生値を導入。`cursor` はフル配列のインデックスを維持するため `Esc` 復元は `setFilterKind(null)` だけで済む。ヘッダーはフィルタ中に `[見出しフィルタ]` のように種別ラベルのみを表示 (位置表記は絞り込みリストの選択行マーカーで自明なため省略)。該当要素が無いときは**フィルタモードに入らない** (`findNext` が `-1` を返した場合の no-op ガード)。
 - **UI**: フッターヘルプをモード別に切り替え (`↑/↓ 移動 Tab フォーカス h 見出し d ランドマーク …` ↔ `↑/↓ 移動 ←/→ フィルタ切替 … Esc 解除 …`)。
 
 ### テスト

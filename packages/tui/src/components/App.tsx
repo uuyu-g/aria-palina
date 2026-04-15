@@ -221,9 +221,7 @@ export function App({ url, nodes, viewportOverride, onExit }: AppProps) {
       ? nodes.length === 0
         ? "0/0"
         : `${cursor + 1}/${nodes.length}`
-      : visibleNodes.length === 0
-        ? `${KIND_LABEL[filterKind]}フィルタ 0/0 · 全体 ${nodes.length === 0 ? "0/0" : `${cursor + 1}/${nodes.length}`}`
-        : `${KIND_LABEL[filterKind]}フィルタ ${visibleCursor + 1}/${visibleNodes.length} · 全体 ${cursor + 1}/${nodes.length}`;
+      : `${KIND_LABEL[filterKind]}フィルタ`;
 
   const footer = filterKind === null ? FOOTER_NORMAL : FOOTER_FILTER;
 
