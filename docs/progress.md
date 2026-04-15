@@ -24,7 +24,7 @@
 | 2 | AOM 抽出・平坦化ロジック (Core) | ✅ Done | `packages/core/src/{ax-protocol,flatten,speech,extract}.ts` + `__tests__/` |
 | 3 | Playwright 統合と ワンショット CLI | ✅ Done | `packages/cli/src/{args,colorize,formatter,playwright-cdp-adapter,run,bin,index}.ts` + `__tests__/` |
 | 4 | Ink TUI 基盤と パフォーマンス最適化 | ✅ Done | `packages/tui/src/{run,virtual-window,role-style,playwright-cdp-adapter,index}.ts` + `components/{App,VirtualList,NodeRow}.tsx` + `__tests__/` |
-| 5 | デュアルナビゲーション実装 (TUI) | ⏳ Pending | — |
+| 5 | デュアルナビゲーション実装 (TUI) | ✅ Done | `packages/core/src/node-kind.ts` + `packages/tui/src/components/App.tsx` (Tab / h/H / D 追加) + `__tests__/` |
 | 6 | Matrix View (Headed モード同期) | ⏳ Pending | — |
 | 7 | Chrome Extension (DevTools Panel) | ⏳ Pending | — |
 | 8 | Test Utilities (BDD) | ⏳ Pending | — |
@@ -316,3 +316,42 @@ export { adaptCDPSession, type MinimalCDPSession } from "./playwright-cdp-adapte
 ```
 
 `@aria-palina/core` には変更なし (環境非依存性を維持)。
+
+## Phase 5 実装メモ
+
+### スコープ
+
+`docs/dd.md` §4 Phase 5 で列挙されている以下を実装した:
+
+- ブラウズモード (矢印キー / DOM 順移動) は Phase 4 で既に実装済み。
+- **フォーカスモード (`Tab` / `Shift+Tab`)**: インタラクティブ要素 (ブラウザで focusable かつ disabled でない) のみをジャンプする。
+- **クイックジャンプ (`h` / `H` / `D`)**: 見出し (`role="heading"`) とランドマーク (ARIA landmark roles) 間の巡回 (PRD §4.2 / manual.md)。
+
+### モジュール構成
+
+| モジュール | 責務 |
+| ---------- | ---- |
+| `packages/core/src/node-kind.ts` | `NodeKind` (`interactive` / `heading` / `landmark`) 判定と `findNext(nodes, from, kind, direction)` 純粋関数。ARIA landmark roles は内部の `Set` で定義。 |
+| `packages/tui/src/components/App.tsx` | `useInput` 分岐を拡張し `Tab` / `Shift+Tab` / `h` / `H` / `D` を `findNext` に dispatch。該当要素が無い場合は cursor を動かさない。 |
+
+### 設計判断
+
+- **インタラクティブ判定は `A11yNode.isFocusable` を再利用**。Phase 2 で CDP の `focusable` state から既に付与されているため、role ベースの判定リストを増設する必要がない。`state.disabled === true` のみ追加で除外する。
+- **ラップアラウンドしない**: `findNext` は末尾 (または先頭) の先に該当が無ければ `-1` を返し、App 側で cursor を維持する。「押すたびにジャンプ」する manual の表現と整合し、無限ループ感を回避。
+- **キー規約**: `g`/`G` の小文字=順方向・大文字=逆方向規約に倣い、`h`/`H` も小文字を順方向 (Phase 4 互換の下矢印方向) に採用。PRD は大文字 `H` 単独表記だが、詳細規約は DD / manual で具体化し、manual.md を併せて更新した。
+- **Core/TUI 境界**: ARIA 仕様知識は全て core 側に閉じ込め、TUI は `findNext` の戻り値を state に反映するだけ。CLAUDE.md 「アーキテクチャ不変条件」に準拠。
+
+### テスト
+
+- `packages/core/src/__tests__/node-kind.test.ts` — `matchesKind` / `findNext` を純粋関数として入出力比較で網羅 (古典派)。disabled スキップ、空配列、境界 (`-1`) を確認。
+- `packages/tui/src/__tests__/app.test.tsx` — `ink-testing-library` で Tab/Shift+Tab/h/H/D の cursor 移動、および該当なし時の静止を状態検証。
+
+### 公開 API 変更
+
+`@aria-palina/core`:
+
+```ts
+export { findNext, matchesKind, type NodeKind } from "./node-kind.js";
+```
+
+`@aria-palina/tui` には新規 export なし (App の挙動拡張のみ)。

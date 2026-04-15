@@ -1,7 +1,27 @@
+import type { A11yNode } from "@aria-palina/core";
 import { describe, expect, test } from "vite-plus/test";
 import { render } from "ink-testing-library";
 import { App } from "../components/App.js";
-import { makeNodes } from "./helpers.js";
+import { makeNode, makeNodes } from "./helpers.js";
+
+/** Phase 5 キーバインドのテスト用に混合種別のノード列を作成する。 */
+function makeMixedNodes(): A11yNode[] {
+  return [
+    makeNode({ backendNodeId: 1, role: "main" }), // 0: landmark
+    makeNode({ backendNodeId: 2, role: "heading", name: "見出し 1" }), // 1
+    makeNode({ backendNodeId: 3, role: "button", isFocusable: true, name: "btn1" }), // 2
+    makeNode({
+      backendNodeId: 4,
+      role: "link",
+      isFocusable: true,
+      state: { disabled: true },
+      name: "disabled-link",
+    }), // 3: disabled interactive
+    makeNode({ backendNodeId: 5, role: "heading", name: "見出し 2" }), // 4
+    makeNode({ backendNodeId: 6, role: "navigation" }), // 5: landmark
+    makeNode({ backendNodeId: 7, role: "button", isFocusable: true, name: "btn2" }), // 6
+  ];
+}
 
 function waitFrames(n = 3): Promise<void> {
   // useInput は useEffect 内で stdin にリスナを貼るため、マウント直後は
@@ -114,6 +134,84 @@ describe("App", () => {
     );
     await waitFrames();
     expect(lastFrame() ?? "").toContain("0/0");
+    unmount();
+  });
+
+  test("Tab キーで次のインタラクティブ要素にカーソルが移動する", async () => {
+    const nodes = makeMixedNodes();
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    // cursor=0 → 次の interactive (disabled をスキップ) は index 2 → 表示 3/7
+    stdin.write("\t");
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("3/7");
+    // もう一度 Tab で disabled を飛ばして index 6 → 7/7
+    stdin.write("\t");
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("7/7");
+    unmount();
+  });
+
+  test("Shift+Tab で前のインタラクティブ要素へ戻る", async () => {
+    const nodes = makeMixedNodes();
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("G"); // cursor = 6 (7/7)
+    await waitFrames();
+    stdin.write("\u001B[Z"); // Shift+Tab
+    await waitFrames();
+    // index 6 の前で interactive かつ enabled なのは index 2 → 3/7
+    expect(lastFrame() ?? "").toContain("3/7");
+    unmount();
+  });
+
+  test("h キーで次の見出しへ、H キーで前の見出しへジャンプする", async () => {
+    const nodes = makeMixedNodes();
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("h");
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("2/7"); // index 1 (heading 1)
+    stdin.write("h");
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("5/7"); // index 4 (heading 2)
+    stdin.write("H");
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("2/7"); // 逆方向: index 1
+    unmount();
+  });
+
+  test("D キーで次のランドマークへジャンプする", async () => {
+    const nodes = makeMixedNodes();
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    // cursor=0 (main landmark) から D で次の landmark (navigation, index 5) へ
+    stdin.write("D");
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("6/7");
+    unmount();
+  });
+
+  test("該当要素が無い場合はカーソル位置を維持する", async () => {
+    const nodes = makeNodes(5); // button のみ (heading / landmark なし)
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("h");
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("1/5");
+    stdin.write("D");
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("1/5");
     unmount();
   });
 });

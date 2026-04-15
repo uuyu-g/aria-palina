@@ -1,4 +1,4 @@
-import type { A11yNode } from "@aria-palina/core";
+import { findNext, type A11yNode, type NodeKind } from "@aria-palina/core";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { useMemo, useState } from "react";
 import { VirtualList } from "./VirtualList.js";
@@ -58,6 +58,28 @@ export function App({ url, nodes, viewportOverride, onExit }: AppProps) {
       setCursor(Math.max(0, nodes.length - 1));
       return;
     }
+    const jumpTo = (kind: NodeKind, direction: 1 | -1) => {
+      setCursor((c) => {
+        const next = findNext(nodes, c, kind, direction);
+        return next === -1 ? c : next;
+      });
+    };
+    if (key.tab) {
+      jumpTo("interactive", key.shift ? -1 : 1);
+      return;
+    }
+    if (input === "h") {
+      jumpTo("heading", 1);
+      return;
+    }
+    if (input === "H") {
+      jumpTo("heading", -1);
+      return;
+    }
+    if (input === "D") {
+      jumpTo("landmark", 1);
+      return;
+    }
   });
 
   const position = nodes.length === 0 ? "0/0" : `${cursor + 1}/${nodes.length}`;
@@ -73,7 +95,7 @@ export function App({ url, nodes, viewportOverride, onExit }: AppProps) {
       </Box>
       <VirtualList nodes={nodes} cursor={cursor} viewport={viewport} />
       <Box>
-        <Text dimColor>↑/↓ 移動 PgUp/PgDn ページ g/G 先頭/末尾 q 終了</Text>
+        <Text dimColor>↑/↓ 移動 Tab フォーカス h/H 見出し D ランドマーク g/G 先頭末尾 q 終了</Text>
       </Box>
     </Box>
   );
