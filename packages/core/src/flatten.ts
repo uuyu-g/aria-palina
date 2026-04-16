@@ -151,6 +151,97 @@ const NOISE_ROLES = new Set(["InlineTextBox", "ListMarker"]);
  */
 const TRANSPARENT_ROLES = new Set(["generic", "rowgroup"]);
 
+/**
+ * ドキュメントルート系ロール。`name` はページタイトル (`<title>`) 由来であり、
+ * 子孫テキストから計算されたものではないため、StaticText 重複判定の対象外とする。
+ */
+const DOCUMENT_ROOT_ROLES = new Set(["RootWebArea", "WebArea"]);
+
+/**
+ * StaticText ノードの「実効親」の name を返す。
+ *
+ * CDP ツリーでは `generic` (名前なし) や `rowgroup` などの透過的ノード、
+ * および `ignored` ノードが StaticText と実際の親要素の間に挟まることがある。
+ * この関数はそれらを飛ばして最初の「出力に現れる」祖先の name を返す。
+ *
+ * `RootWebArea` / `WebArea` は `<title>` 由来の name を持つが子孫テキストとは
+ * 無関係なので、これらに到達した場合は空文字を返す。
+ */
+function findEffectiveParentName(node: RawAXNode, byId: ReadonlyMap<string, RawAXNode>): string {
+  let parentId = node.parentId;
+  while (parentId) {
+    const parent = byId.get(parentId);
+    if (!parent) break;
+
+    // ignored ノードは透過的 → さらに上を辿る
+    if (parent.ignored) {
+      parentId = parent.parentId;
+      continue;
+    }
+
+    const parentRole = readString(parent.role);
+    const parentName = readString(parent.name);
+
+    // ドキュメントルートの name は <title> 由来なので判定に使わない
+    if (DOCUMENT_ROOT_ROLES.has(parentRole)) return "";
+
+    // 透過ロールのうち出力されないもの (generic 名前なし / rowgroup) → さらに上を辿る
+    if (TRANSPARENT_ROLES.has(parentRole)) {
+      if (parentRole === "generic" && parentName.length > 0) {
+        // 名前付き generic はグループとして出力されるのでここで止まる
+        return parentName;
+      }
+      parentId = parent.parentId;
+      continue;
+    }
+
+    return parentName;
+  }
+  return "";
+}
+
+/**
+ * 名前を持たない親ノードの唯一の子が StaticText である場合、テキストを
+ * 親に吸収して StaticText 行を除去する。
+ *
+ * 例:
+ *   `[paragraph]` + `[StaticText] JavaScript`
+ *   → `[paragraph] JavaScript` (1 行に統合)
+ *
+ * 判定条件 (flat 配列上):
+ * 1. ノード A: `name` が空
+ * 2. 直後のノード B: `role === "StaticText"` かつ `depth === A.depth + 1`
+ * 3. B の次 (存在すれば): `depth <= A.depth` (= A の他の子がない)
+ *
+ * 配列をインプレースで変異させる (splice)。
+ */
+function absorbLoneStaticText(nodes: A11yNode[]): void {
+  let i = 0;
+  while (i < nodes.length - 1) {
+    const parent = nodes[i]!;
+    const child = nodes[i + 1]!;
+
+    if (parent.name === "" && child.role === "StaticText" && child.depth === parent.depth + 1) {
+      // 次のノード (child の後) が存在しないか、depth が parent 以下なら唯一の子
+      const next = nodes[i + 2];
+      if (!next || next.depth <= parent.depth) {
+        // 吸収: 親の name と speechText を更新し、StaticText を除去
+        parent.name = child.name;
+        parent.speechText = buildSpeechText({
+          role: parent.role,
+          name: parent.name,
+          properties: parent.properties,
+          state: parent.state as Record<string, boolean | string>,
+        });
+        nodes.splice(i + 1, 1);
+        // i は進めない (統合後の parent を再評価する必要はないが、次を見るため)
+        continue;
+      }
+    }
+    i++;
+  }
+}
+
 /** `flattenAXTree` の動作を制御するオプション。 */
 export interface FlattenOptions {
   /**
@@ -160,7 +251,7 @@ export interface FlattenOptions {
    * 除外対象:
    * - `InlineTextBox` — Chrome 内部の描画用ノード
    * - `ListMarker` — リストマーカー (•, 1. 等)
-   * - `StaticText` — 親要素の `name` と同一テキストを持つ冗長ノード
+   * - `StaticText` — 実効親 (透過ノードを飛ばした祖先) に `name` がある冗長ノード
    */
   filter?: boolean;
 }
@@ -239,14 +330,12 @@ export function flattenAXTree(
         if (nodeName.trim() === "") return;
       }
 
-      // StaticText は親の name と同一テキストなら冗長として除外
+      // StaticText は実効親に name があれば冗長として除外。
+      // Chrome AX Tree では親の accessible name は子孫テキストから計算されるため、
+      // 親に name がある場合 StaticText 子は常にその断片であり情報が重複する。
       if (role === "StaticText" && node.parentId) {
-        const parent = byId.get(node.parentId);
-        if (parent) {
-          const parentName = readString(parent.name);
-          const nodeName = readString(node.name);
-          if (nodeName !== "" && nodeName === parentName) return;
-        }
+        const effectiveName = findEffectiveParentName(node, byId);
+        if (effectiveName.length > 0) return;
       }
 
       // generic (名前なし) / rowgroup は透過的に子を辿る (depth を消費しない)
@@ -285,6 +374,11 @@ export function flattenAXTree(
 
   // テーブル系ノードに列位置・ヘッダー名・行列数を付与
   enrichTableContext(result);
+
+  // 名前なし親の唯一の StaticText 子を親に吸収して行数を削減する
+  if (shouldFilter) {
+    absorbLoneStaticText(result);
+  }
 
   return result;
 }
