@@ -10,6 +10,9 @@ const KIND_LABEL: Readonly<Record<NodeKind, string>> = {
   interactive: "インタラクティブ",
 };
 
+/** タブバーの表示順。`cycleKind` と同じ巡回順序。 */
+const TAB_ORDER: readonly NodeKind[] = ["heading", "landmark", "interactive"];
+
 /**
  * フィルタ済みノードの depth を正規化する。
  * 元ツリーの絶対 depth をそのまま使うとフィルタで間が抜けた分だけ
@@ -44,8 +47,6 @@ export function FilterModal({ kind, nodes, cursor, viewport }: FilterModalProps)
     [normalized.length, cursor, viewport],
   );
 
-  const label = KIND_LABEL[kind];
-  const title = `${label}一覧 (${normalized.length}件)`;
   const visible = normalized.slice(start, end);
   const padCount = Math.max(0, viewport - (normalized.length === 0 ? 1 : visible.length));
 
@@ -57,9 +58,22 @@ export function FilterModal({ kind, nodes, cursor, viewport }: FilterModalProps)
       paddingLeft={1}
       paddingRight={1}
     >
-      <Text bold color="cyan">
-        {title}
-      </Text>
+      <Box gap={1}>
+        {TAB_ORDER.map((k) => {
+          const isActive = k === kind;
+          const tabLabel = KIND_LABEL[k];
+          return (
+            <Text
+              key={k}
+              bold={isActive}
+              color={isActive ? "cyan" : undefined}
+              dimColor={!isActive}
+            >
+              {isActive ? `${tabLabel} (${normalized.length})` : tabLabel}
+            </Text>
+          );
+        })}
+      </Box>
       <Box flexDirection="column">
         {normalized.length === 0 ? (
           <Text dimColor>(該当するノードがありません)</Text>

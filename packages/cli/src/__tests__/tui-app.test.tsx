@@ -211,7 +211,7 @@ describe("App", () => {
     stdin.write("h");
     await waitFrames();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("見出し一覧"); // モーダルタイトル
+    expect(frame).toContain("見出し ("); // アクティブタブ
     expect(frame).toContain("> [heading] 見出し 1"); // 選択行が見出し 1
     unmount();
   });
@@ -226,7 +226,7 @@ describe("App", () => {
     stdin.write("d");
     await waitFrames();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("ランドマーク一覧"); // モーダルタイトル
+    expect(frame).toContain("ランドマーク ("); // アクティブタブ
     expect(frame).toContain("> [main] main-landmark"); // 現在位置の main が選択
     unmount();
   });
@@ -262,7 +262,7 @@ describe("App", () => {
     stdin.write("h"); // 前方に見出しは無いが後方に見出し 2 (index 4) がある
     await waitFrames();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("見出し一覧"); // モーダルが開いている
+    expect(frame).toContain("見出し ("); // モーダルが開いている
     expect(frame).toContain("> [heading] 見出し 2"); // 最寄りの見出し 2 が選択
     unmount();
   });
@@ -278,7 +278,7 @@ describe("App filter modal", () => {
     stdin.write("h");
     await waitFrames();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("見出し一覧"); // モーダルタイトル
+    expect(frame).toContain("見出し ("); // アクティブタブ
     expect(frame).toContain("見出し 1");
     // 非見出しノードの name は表示されない
     expect(frame).not.toContain("btn1");
@@ -334,16 +334,16 @@ describe("App filter modal", () => {
     await waitFrames();
     stdin.write("h");
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("見出し一覧");
+    expect(lastFrame() ?? "").toContain("見出し (");
     stdin.write("\u001B[C"); // →
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("ランドマーク一覧");
+    expect(lastFrame() ?? "").toContain("ランドマーク (");
     stdin.write("\u001B[C"); // →
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("インタラクティブ一覧");
+    expect(lastFrame() ?? "").toContain("インタラクティブ (");
     stdin.write("\u001B[C"); // →
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("見出し一覧");
+    expect(lastFrame() ?? "").toContain("見出し (");
     unmount();
   });
 
@@ -357,10 +357,10 @@ describe("App filter modal", () => {
     await waitFrames();
     stdin.write("\u001B[D"); // ←
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("インタラクティブ一覧");
+    expect(lastFrame() ?? "").toContain("インタラクティブ (");
     stdin.write("\u001B[D"); // ←
     await waitFrames();
-    expect(lastFrame() ?? "").toContain("ランドマーク一覧");
+    expect(lastFrame() ?? "").toContain("ランドマーク (");
     unmount();
   });
 
