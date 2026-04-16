@@ -216,18 +216,18 @@ describe("App", () => {
     unmount();
   });
 
-  test("d でランドマークモーダルが開き次のランドマークへ移動する", async () => {
+  test("d でランドマークモーダルが開き最寄りのランドマークが選択される", async () => {
     const nodes = makeMixedNodes();
     const { lastFrame, stdin, unmount } = render(
       <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
     );
     await waitFrames();
-    // cursor=0 (main landmark) から d で次の landmark (navigation, index 5) へ
+    // cursor=0 (main landmark) → findNearest で現在位置が一致するため cursor=0 のまま
     stdin.write("d");
     await waitFrames();
     const frame = lastFrame() ?? "";
     expect(frame).toContain("ランドマーク一覧"); // モーダルタイトル
-    expect(frame).toContain("> [navigation] nav-landmark"); // 選択行が navigation
+    expect(frame).toContain("> [main] main-landmark"); // 現在位置の main が選択
     unmount();
   });
 
@@ -250,6 +250,22 @@ describe("App", () => {
     expect(frame).not.toContain("種別切替");
     unmount();
   });
+
+  test("h でカーソルより前の見出しも検出してモーダルが開く", async () => {
+    const nodes = makeMixedNodes();
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("G"); // cursor=6 (末尾の btn2)
+    await waitFrames();
+    stdin.write("h"); // 前方に見出しは無いが後方に見出し 2 (index 4) がある
+    await waitFrames();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("見出し一覧"); // モーダルが開いている
+    expect(frame).toContain("> [heading] 見出し 2"); // 最寄りの見出し 2 が選択
+    unmount();
+  });
 });
 
 describe("App filter modal", () => {
@@ -268,6 +284,30 @@ describe("App filter modal", () => {
     expect(frame).not.toContain("btn1");
     expect(frame).not.toContain("main-landmark");
     expect(frame).not.toContain("nav-landmark");
+    unmount();
+  });
+
+  test("モーダル内の深いネスト構造が親子関係を保ちつつ正規化される", async () => {
+    const nodes = [
+      makeNode({ backendNodeId: 1, role: "heading", speechText: "[heading] h1", depth: 0 }),
+      makeNode({ backendNodeId: 2, role: "text", speechText: "[text] t1", depth: 1 }),
+      makeNode({ backendNodeId: 3, role: "text", speechText: "[text] t2", depth: 2 }),
+      makeNode({ backendNodeId: 4, role: "text", speechText: "[text] t3", depth: 3 }),
+      makeNode({ backendNodeId: 5, role: "heading", speechText: "[heading] h2", depth: 4 }),
+    ];
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("h");
+    await waitFrames();
+    const frame = lastFrame() ?? "";
+    // 元の depth [0, 4] が正規化されて [0, 1] になる。
+    // depth=4 のままなら "  ".repeat(4) = 8 文字のインデントがつくが
+    // 正規化により "  ".repeat(1) = 2 文字で済む。
+    expect(frame).not.toMatch(/\s{8}\[heading\]/); // 8 文字以上のインデントは無い
+    expect(frame).toContain("[heading] h1");
+    expect(frame).toContain("[heading] h2");
     unmount();
   });
 

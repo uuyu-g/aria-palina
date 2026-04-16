@@ -211,11 +211,11 @@ export function App({ url, nodes, viewportOverride, onExit }: AppProps) {
   }
 
   function openModal(kind: NodeKind) {
-    // 通常モードからの進入時は「今の位置から次のマッチへジャンプ」。
+    // 現在位置→前方→後方の順で最寄りのマッチを探す。
     // 該当要素が無ければモーダルは開かない (空リストで UI を壊さないため)。
-    const next = findNext(nodes, cursor, kind, 1);
-    if (next === -1) return;
-    setCursor(next);
+    const target = findNearest(nodes, cursor, kind);
+    if (target === -1) return;
+    setCursor(target);
     setModalKind(kind);
   }
 

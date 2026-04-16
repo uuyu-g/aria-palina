@@ -10,6 +10,24 @@ const KIND_LABEL: Readonly<Record<NodeKind, string>> = {
   interactive: "インタラクティブ",
 };
 
+/**
+ * フィルタ済みノードの depth を正規化する。
+ * 元ツリーの絶対 depth をそのまま使うとフィルタで間が抜けた分だけ
+ * 不自然に深いインデントになるため、親子関係を保ったまま詰め直す。
+ */
+function normalizeDepths(nodes: readonly A11yNode[]): A11yNode[] {
+  if (nodes.length === 0) return [];
+  const stack: number[] = [];
+  return nodes.map((node) => {
+    while (stack.length > 0 && stack[stack.length - 1]! >= node.depth) {
+      stack.pop();
+    }
+    const normalized = stack.length;
+    stack.push(node.depth);
+    return normalized === node.depth ? node : { ...node, depth: normalized };
+  });
+}
+
 export interface FilterModalProps {
   kind: NodeKind;
   nodes: A11yNode[];
@@ -19,15 +37,17 @@ export interface FilterModalProps {
 }
 
 export function FilterModal({ kind, nodes, cursor, viewport }: FilterModalProps) {
+  const normalized = useMemo(() => normalizeDepths(nodes), [nodes]);
+
   const { start, end } = useMemo(
-    () => computeWindow({ total: nodes.length, cursor, viewport }),
-    [nodes.length, cursor, viewport],
+    () => computeWindow({ total: normalized.length, cursor, viewport }),
+    [normalized.length, cursor, viewport],
   );
 
   const label = KIND_LABEL[kind];
-  const title = `${label}一覧 (${nodes.length}件)`;
-  const visible = nodes.slice(start, end);
-  const padCount = Math.max(0, viewport - (nodes.length === 0 ? 1 : visible.length));
+  const title = `${label}一覧 (${normalized.length}件)`;
+  const visible = normalized.slice(start, end);
+  const padCount = Math.max(0, viewport - (normalized.length === 0 ? 1 : visible.length));
 
   return (
     <Box
@@ -41,7 +61,7 @@ export function FilterModal({ kind, nodes, cursor, viewport }: FilterModalProps)
         {title}
       </Text>
       <Box flexDirection="column">
-        {nodes.length === 0 ? (
+        {normalized.length === 0 ? (
           <Text dimColor>(該当するノードがありません)</Text>
         ) : (
           visible.map((node, i) => {
