@@ -8,6 +8,7 @@ import {
 } from "@aria-palina/core";
 import { Box, Text, useApp, useInput, useStdout, type Key } from "ink";
 import { useMemo, useState } from "react";
+import { FilterModal } from "./FilterModal.js";
 import { VirtualList } from "./VirtualList.js";
 
 export interface AppProps {
@@ -24,6 +25,9 @@ const FOOTER_LINES = 1;
 const DEFAULT_ROWS = 24;
 const MIN_VIEWPORT = 3;
 
+/** モーダル内のボーダー・タイトル・ヘルプ行で消費される行数。 */
+const MODAL_CHROME_LINES = 4; // border top + title + help + border bottom
+
 const KIND_LABEL: Readonly<Record<NodeKind, string>> = {
   heading: "見出し",
   landmark: "ランドマーク",
@@ -31,7 +35,6 @@ const KIND_LABEL: Readonly<Record<NodeKind, string>> = {
 };
 
 const FOOTER_NORMAL = "↑/↓ 移動 Tab フォーカス h 見出し d ランドマーク g/G 先頭末尾 q 終了";
-const FOOTER_FILTER = "↑/↓ 移動 ←/→ 種別切替 g/G 先頭末尾 Esc 解除 q 終了";
 
 /**
  * `from` の位置から最寄りの `kind` 一致ノードを探す。
@@ -52,7 +55,7 @@ export function App({ url, nodes, viewportOverride, onExit }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [cursor, setCursor] = useState(0);
-  const [filterKind, setFilterKind] = useState<NodeKind | null>(null);
+  const [modalKind, setModalKind] = useState<NodeKind | null>(null);
 
   const viewport = useMemo(() => {
     if (viewportOverride !== undefined) return Math.max(MIN_VIEWPORT, viewportOverride);
@@ -60,31 +63,34 @@ export function App({ url, nodes, viewportOverride, onExit }: AppProps) {
     return Math.max(MIN_VIEWPORT, rows - HEADER_LINES - FOOTER_LINES);
   }, [stdout?.rows, viewportOverride]);
 
-  // フィルタモード時の派生値: 絞り込み後のノード列と、その各要素がフル配列で
-  // 何番目かを示すインデックス列。`visibleToFull[i]` は絞り込みリスト i 番目の
-  // フル配列上のインデックス。
-  const { visibleNodes, visibleToFull } = useMemo(() => {
-    if (filterKind === null) {
-      return { visibleNodes: nodes, visibleToFull: null as number[] | null };
+  // モーダル表示時の絞り込みノードとインデックスマッピング
+  const { filteredNodes, filteredToFull } = useMemo(() => {
+    if (modalKind === null) {
+      return { filteredNodes: [] as A11yNode[], filteredToFull: [] as number[] };
     }
-    const filtered = filterByKind(nodes, filterKind);
+    const filtered = filterByKind(nodes, modalKind);
     const mapping: number[] = [];
     let searchFrom = 0;
     for (const node of filtered) {
-      // nodes は DFS 順で重複が無いので indexOf で十分。ただし `filterByKind` が
-      // 保存する順序を活かし、searchFrom を進めることで全体を O(N) に抑える。
       while (searchFrom < nodes.length && nodes[searchFrom] !== node) searchFrom++;
       mapping.push(searchFrom);
       searchFrom++;
     }
-    return { visibleNodes: filtered, visibleToFull: mapping };
-  }, [nodes, filterKind]);
+    return { filteredNodes: filtered, filteredToFull: mapping };
+  }, [nodes, modalKind]);
 
-  const visibleCursor = useMemo(() => {
-    if (filterKind === null || visibleToFull === null) return cursor;
-    const idx = visibleToFull.indexOf(cursor);
+  // モーダル内カーソル (filteredNodes 内のインデックス)
+  const modalCursor = useMemo(() => {
+    if (modalKind === null || filteredToFull.length === 0) return 0;
+    const idx = filteredToFull.indexOf(cursor);
     return idx === -1 ? 0 : idx;
-  }, [cursor, filterKind, visibleToFull]);
+  }, [cursor, modalKind, filteredToFull]);
+
+  // モーダルのアイテム表示用ビューポート
+  const modalViewport = useMemo(
+    () => Math.max(1, viewport + FOOTER_LINES - MODAL_CHROME_LINES),
+    [viewport],
+  );
 
   useInput((input, key) => {
     if (input === "q" || (key.ctrl && input === "c")) {
@@ -93,19 +99,18 @@ export function App({ url, nodes, viewportOverride, onExit }: AppProps) {
       return;
     }
     // Tab / Shift+Tab は両モード共通でフル配列上のインタラクティブ要素を巡回する。
-    // フィルタモード中に押された場合はフィルタを解除して通常モードに戻す (カーソルが
-    // 絞り込みリスト外に飛ぶと表示が壊れるため)。
+    // モーダル中に押された場合はモーダルを閉じて通常モードに戻す。
     if (key.tab) {
       const next = findNext(nodes, cursor, "interactive", key.shift ? -1 : 1);
       if (next !== -1) {
         setCursor(next);
-        if (filterKind !== null) setFilterKind(null);
+        if (modalKind !== null) setModalKind(null);
       }
       return;
     }
 
-    if (filterKind !== null && visibleToFull !== null) {
-      handleFilterMode(input, key, filterKind, visibleToFull);
+    if (modalKind !== null) {
+      handleModalMode(input, key, modalKind);
       return;
     }
     handleNormalMode(input, key);
@@ -137,93 +142,97 @@ export function App({ url, nodes, viewportOverride, onExit }: AppProps) {
       return;
     }
     if (input === "h") {
-      enterFilterMode("heading");
+      openModal("heading");
       return;
     }
     if (input === "d") {
-      enterFilterMode("landmark");
+      openModal("landmark");
       return;
     }
   }
 
-  function handleFilterMode(input: string, key: Key, kind: NodeKind, mapping: number[]) {
+  function handleModalMode(input: string, key: Key, kind: NodeKind) {
     if (key.escape) {
-      setFilterKind(null);
+      setModalKind(null);
       return;
     }
-    if (mapping.length === 0) return;
-    const last = mapping.length - 1;
+    if (key.return) {
+      // Enter: 現在位置で確定してモーダルを閉じる
+      setModalKind(null);
+      return;
+    }
+
+    if (filteredToFull.length === 0) return;
+    const last = filteredToFull.length - 1;
     const clamp = (i: number) => Math.max(0, Math.min(last, i));
 
     if (key.downArrow || input === "j") {
-      const next = clamp(visibleCursor + 1);
-      const full = mapping[next];
+      const next = clamp(modalCursor + 1);
+      const full = filteredToFull[next];
       if (full !== undefined) setCursor(full);
       return;
     }
     if (key.upArrow || input === "k") {
-      const next = clamp(visibleCursor - 1);
-      const full = mapping[next];
+      const next = clamp(modalCursor - 1);
+      const full = filteredToFull[next];
       if (full !== undefined) setCursor(full);
       return;
     }
     if (key.pageDown) {
-      const next = clamp(visibleCursor + viewport);
-      const full = mapping[next];
+      const next = clamp(modalCursor + modalViewport);
+      const full = filteredToFull[next];
       if (full !== undefined) setCursor(full);
       return;
     }
     if (key.pageUp) {
-      const next = clamp(visibleCursor - viewport);
-      const full = mapping[next];
+      const next = clamp(modalCursor - modalViewport);
+      const full = filteredToFull[next];
       if (full !== undefined) setCursor(full);
       return;
     }
     if (input === "g") {
-      const full = mapping[0];
+      const full = filteredToFull[0];
       if (full !== undefined) setCursor(full);
       return;
     }
     if (input === "G") {
-      const full = mapping[last];
+      const full = filteredToFull[last];
       if (full !== undefined) setCursor(full);
       return;
     }
     if (key.leftArrow) {
-      switchFilterKind(kind, -1);
+      switchModalKind(kind, -1);
       return;
     }
     if (key.rightArrow) {
-      switchFilterKind(kind, 1);
+      switchModalKind(kind, 1);
       return;
     }
   }
 
-  function enterFilterMode(kind: NodeKind) {
+  function openModal(kind: NodeKind) {
     // 通常モードからの進入時は「今の位置から次のマッチへジャンプ」。
-    // 該当要素が無ければフィルタモードには入らない (空リストで UI を壊さないため)。
+    // 該当要素が無ければモーダルは開かない (空リストで UI を壊さないため)。
     const next = findNext(nodes, cursor, kind, 1);
     if (next === -1) return;
     setCursor(next);
-    setFilterKind(kind);
+    setModalKind(kind);
   }
 
-  function switchFilterKind(current: NodeKind, direction: 1 | -1) {
+  function switchModalKind(current: NodeKind, direction: 1 | -1) {
     const nextKind = cycleKind(current, direction);
     const idx = findNearest(nodes, cursor, nextKind);
     if (idx === -1) return; // 新しい種別に該当するノードが全く無ければ no-op。
     setCursor(idx);
-    setFilterKind(nextKind);
+    setModalKind(nextKind);
   }
 
   const position =
-    filterKind === null
+    modalKind === null
       ? nodes.length === 0
         ? "0/0"
         : `${cursor + 1}/${nodes.length}`
-      : KIND_LABEL[filterKind];
-
-  const footer = filterKind === null ? FOOTER_NORMAL : FOOTER_FILTER;
+      : `${KIND_LABEL[modalKind]} ${modalCursor + 1}/${filteredNodes.length}`;
 
   return (
     <Box flexDirection="column">
@@ -234,10 +243,21 @@ export function App({ url, nodes, viewportOverride, onExit }: AppProps) {
         <Text> </Text>
         <Text color="gray">[{position}]</Text>
       </Box>
-      <VirtualList nodes={visibleNodes} cursor={visibleCursor} viewport={viewport} />
-      <Box>
-        <Text dimColor>{footer}</Text>
-      </Box>
+      {modalKind !== null ? (
+        <FilterModal
+          kind={modalKind}
+          nodes={filteredNodes}
+          cursor={modalCursor}
+          viewport={modalViewport}
+        />
+      ) : (
+        <>
+          <VirtualList nodes={nodes} cursor={cursor} viewport={viewport} />
+          <Box>
+            <Text dimColor>{FOOTER_NORMAL}</Text>
+          </Box>
+        </>
+      )}
     </Box>
   );
 }
