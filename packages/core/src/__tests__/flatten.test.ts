@@ -251,32 +251,84 @@ describe("flattenAXTree", () => {
       expect(result.map((n) => n.role)).toEqual(["list", "listitem"]);
     });
 
-    test("StaticText は親の name と同一テキストの場合のみ除外される", () => {
+    test("StaticText は実効親に name がある場合すべて除外される", () => {
       const result = flattenAXTree([
         node({
           nodeId: "link",
           ignored: false,
           role: { type: "role", value: "link" },
-          name: { type: "computedString", value: "ホーム" },
-          childIds: ["dup", "extra"],
+          name: { type: "computedString", value: "Repositories 59" },
+          childIds: ["st1", "st2"],
         }),
         node({
-          nodeId: "dup",
+          nodeId: "st1",
           parentId: "link",
           ignored: false,
           role: { type: "role", value: "StaticText" },
-          name: { type: "computedString", value: "ホーム" }, // 親と同じ → 除外
+          name: { type: "computedString", value: "Repositories" },
         }),
         node({
-          nodeId: "extra",
+          nodeId: "st2",
           parentId: "link",
           ignored: false,
           role: { type: "role", value: "StaticText" },
-          name: { type: "computedString", value: "（新着）" }, // 親と違う → 残る
+          name: { type: "computedString", value: "59" },
         }),
       ]);
-      expect(result.map((n) => n.role)).toEqual(["link", "StaticText"]);
-      expect(result.map((n) => n.name)).toEqual(["ホーム", "（新着）"]);
+      // 親に name があるため断片 StaticText はすべて除外
+      expect(result.map((n) => n.role)).toEqual(["link"]);
+      expect(result[0]!.name).toBe("Repositories 59");
+    });
+
+    test("StaticText は実効親に name がない場合は残る", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "li",
+          ignored: false,
+          role: { type: "role", value: "listitem" },
+          name: { type: "computedString", value: "" },
+          childIds: ["st"],
+        }),
+        node({
+          nodeId: "st",
+          parentId: "li",
+          ignored: false,
+          role: { type: "role", value: "StaticText" },
+          name: { type: "computedString", value: "Public" },
+        }),
+      ]);
+      // 親に name がないため StaticText は吸収される (唯一の子)
+      expect(result).toHaveLength(1);
+      expect(result[0]!.name).toBe("Public");
+    });
+
+    test("透過ノード越しの StaticText も実効親の name で除外される", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "link",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          name: { type: "computedString", value: "Pricing" },
+          childIds: ["div"],
+        }),
+        node({
+          nodeId: "div",
+          parentId: "link",
+          ignored: false,
+          role: { type: "role", value: "generic" },
+          name: { type: "computedString", value: "" },
+          childIds: ["st"],
+        }),
+        node({
+          nodeId: "st",
+          parentId: "div",
+          ignored: false,
+          role: { type: "role", value: "StaticText" },
+          name: { type: "computedString", value: "Pricing" },
+        }),
+      ]);
+      // generic (名前なし) を飛ばして link の name を参照 → 除外
+      expect(result.map((n) => n.role)).toEqual(["link"]);
     });
 
     test("filter: false を指定すると全ノードがそのまま出力される", () => {
@@ -509,6 +561,68 @@ describe("flattenAXTree", () => {
       expect(result[1]!.speechText).toBe("[generic] セクション");
       expect(result[1]!.depth).toBe(1);
       expect(result[2]!.depth).toBe(2);
+    });
+
+    test("名前なし親の唯一の StaticText 子はテキスト吸収される", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "main",
+          ignored: false,
+          role: { type: "role", value: "main" },
+          name: { type: "computedString", value: "" },
+          childIds: ["p"],
+        }),
+        node({
+          nodeId: "p",
+          parentId: "main",
+          ignored: false,
+          role: { type: "role", value: "paragraph" },
+          name: { type: "computedString", value: "" },
+          childIds: ["st"],
+        }),
+        node({
+          nodeId: "st",
+          parentId: "p",
+          ignored: false,
+          role: { type: "role", value: "StaticText" },
+          name: { type: "computedString", value: "JavaScript" },
+        }),
+      ]);
+      // paragraph が StaticText のテキストを吸収し、StaticText 行は消える
+      expect(result.map((n) => [n.role, n.name])).toEqual([
+        ["main", ""],
+        ["paragraph", "JavaScript"],
+      ]);
+      expect(result[1]!.speechText).toBe("[paragraph] JavaScript");
+    });
+
+    test("名前なし親に複数子がある場合は吸収されない", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "li",
+          ignored: false,
+          role: { type: "role", value: "listitem" },
+          name: { type: "computedString", value: "" },
+          childIds: ["link", "st"],
+        }),
+        node({
+          nodeId: "link",
+          parentId: "li",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          name: { type: "computedString", value: "StreetNEMS" },
+        }),
+        node({
+          nodeId: "st",
+          parentId: "li",
+          ignored: false,
+          role: { type: "role", value: "StaticText" },
+          name: { type: "computedString", value: "Public" },
+        }),
+      ]);
+      // listitem に複数子があるため吸収されない
+      expect(result.map((n) => n.role)).toEqual(["listitem", "link", "StaticText"]);
+      expect(result[2]!.name).toBe("Public");
     });
 
     test("rowgroup は透過的に子を辿る", () => {

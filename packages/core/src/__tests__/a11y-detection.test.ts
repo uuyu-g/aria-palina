@@ -350,12 +350,11 @@ describe("a11y 不適切パターンの検出可視性", () => {
       const roles = result.map((n) => n.role);
       expect(roles).not.toContain("heading");
       // すべてが段落とテキストだけ — 構造が読み取れない
+      // (唯一の StaticText 子は親 paragraph に吸収される)
       expect(result.map((n) => n.speechText)).toEqual([
         "[main]",
-        "[paragraph]",
-        "[StaticText] これはタイトルのつもり",
-        "[paragraph]",
-        "[StaticText] 本文です",
+        "[paragraph] これはタイトルのつもり",
+        "[paragraph] 本文です",
       ]);
     });
   });
