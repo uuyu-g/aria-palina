@@ -413,6 +413,10 @@ GitHub Actions (`.github/workflows/ci.yml`):
   例: `feat(core): implement Phase 2 AOM extraction and speech simulator`
 - プッシュは `git push -u origin <branch>` で行う。
 - **PR は明示的に指示されたときのみ作成する**。
+- PR を作成するときは **タイトル・本文ともに日本語** で書く。
+  文体は **だ・である調 (常体)** で統一し、ですます調は使わない。
+  本文は `.github/PULL_REQUEST_TEMPLATE.md` のテンプレートに従うこと
+  (概要 / 変更内容 / 関連ドキュメント / テスト / 確認事項)。
 
 ---
 
