@@ -5,6 +5,8 @@ export {
   type BrowserFactory,
   type BrowserFactoryOptions,
   type BrowserHandle,
+  type LiveBridge,
+  type LiveUpdate,
   type TuiArgs,
   type TuiIO,
   type TuiRenderer,

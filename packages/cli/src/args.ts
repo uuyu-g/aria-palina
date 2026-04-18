@@ -20,6 +20,10 @@ const HELP_TEXT = `palina — ページのアクセシビリティツリーを N
   -w, --wait <strategy>  待機戦略: "network-idle" (デフォルト) | "none"
       --idle-time <ms>   ネットワークアイドル判定の静穏時間 (デフォルト: 500)
   -t, --timeout <ms>     最大待機時間 (デフォルト: 30000)
+      --wait-for-selector <css>   CSS セレクタがマッチするまで追加で待機
+      --wait-for-function <js>    ページ内 eval 真偽関数で追加で待機
+      --delay <ms>                抽出前の固定スリープ (エスケープハッチ)
+      --no-live      TUI モードで DOM 変化による自動再取得を無効化
   -h, --help         このヘルプを表示
   -V, --version      バージョンを表示
 
@@ -45,6 +49,10 @@ export interface CliArgs {
   timeout: number;
   persist: boolean;
   userDataDir: string | undefined;
+  waitForSelector: string | undefined;
+  waitForFunction: string | undefined;
+  delay: number;
+  live: boolean;
 }
 
 const ROLE_ALIASES: Record<string, string[]> = {
@@ -86,6 +94,11 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
         wait: { type: "string", short: "w", default: "network-idle" },
         "idle-time": { type: "string", default: "500" },
         timeout: { type: "string", short: "t", default: "30000" },
+        "wait-for-selector": { type: "string" },
+        "wait-for-function": { type: "string" },
+        delay: { type: "string", default: "0" },
+        live: { type: "boolean" },
+        "no-live": { type: "boolean" },
         help: { type: "boolean", short: "h", default: false },
         version: { type: "boolean", short: "V", default: false },
       },
@@ -163,6 +176,27 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
     };
   }
 
+  const delayRaw = values.delay as string;
+  const delay = Number(delayRaw);
+  if (!Number.isFinite(delay) || delay < 0) {
+    return {
+      ok: false,
+      exitCode: 2,
+      message: `不正な --delay 値: "${delayRaw}"。0 以上の数値を指定してください。`,
+    };
+  }
+
+  const hasLive = values.live as boolean | undefined;
+  const hasNoLive = values["no-live"] as boolean | undefined;
+  if (hasLive && hasNoLive) {
+    return {
+      ok: false,
+      exitCode: 2,
+      message: "--live と --no-live は同時に指定できません。",
+    };
+  }
+  const live = hasNoLive ? false : true;
+
   const hasIndent = values.indent as boolean | undefined;
   const hasNoIndent = values["no-indent"] as boolean | undefined;
   let indent: boolean | undefined;
@@ -210,6 +244,9 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
   const userDataDir = userDataDirRaw && userDataDirRaw.length > 0 ? userDataDirRaw : undefined;
   const persist = !(values["no-persist"] as boolean);
 
+  const waitForSelector = (values["wait-for-selector"] as string | undefined) || undefined;
+  const waitForFunction = (values["wait-for-function"] as string | undefined) || undefined;
+
   return {
     ok: true,
     args: {
@@ -225,6 +262,10 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
       timeout,
       persist,
       userDataDir,
+      waitForSelector,
+      waitForFunction,
+      delay,
+      live,
     },
   };
 }

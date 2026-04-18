@@ -19,6 +19,10 @@ describe("parseCliArgs", () => {
         timeout: 30000,
         persist: true,
         userDataDir: undefined,
+        waitForSelector: undefined,
+        waitForFunction: undefined,
+        delay: 0,
+        live: true,
       },
     });
   });
@@ -321,6 +325,77 @@ describe("parseCliArgs", () => {
     expect(result).toEqual({
       ok: true,
       args: expect.objectContaining({ userDataDir: "/tmp/profile", persist: true }),
+    });
+  });
+
+  test("--wait-for-selector を受理して waitForSelector に格納する", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--wait-for-selector", "#ready"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ waitForSelector: "#ready" }),
+    });
+  });
+
+  test("--wait-for-function を受理して waitForFunction に格納する", () => {
+    const result = parseCliArgs([
+      "-u",
+      "https://x.com",
+      "--wait-for-function",
+      "window.__ready === true",
+    ]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ waitForFunction: "window.__ready === true" }),
+    });
+  });
+
+  test("--delay に非負整数を指定できる", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--delay", "1500"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ delay: 1500 }),
+    });
+  });
+
+  test("--delay 未指定時は 0", () => {
+    const result = parseCliArgs(["-u", "https://x.com"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ delay: 0 }),
+    });
+  });
+
+  test("--delay に負の数を指定するとエラーになる", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--delay", "-10"]);
+    expect(result).toEqual({
+      ok: false,
+      exitCode: 2,
+      message: expect.stringContaining("--delay"),
+    });
+  });
+
+  test("live は既定で true", () => {
+    const result = parseCliArgs(["-u", "https://x.com"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ live: true }),
+    });
+  });
+
+  test("--no-live で live が false になる", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--no-live"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ live: false }),
+    });
+  });
+
+  test("--live と --no-live を同時指定するとエラーになる", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--live", "--no-live"]);
+    expect(result).toEqual({
+      ok: false,
+      exitCode: 2,
+      message: expect.stringContaining("同時に指定できません"),
     });
   });
 });
