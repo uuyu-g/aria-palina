@@ -96,11 +96,41 @@ export async function subscribeAXTreeUpdates(
 
   await cdp.send("DOM.enable");
   await cdp.send("Page.enable");
+  // `Page.enable` のみだと一部の Chrome バージョン / CDP 実装で
+  // `Page.lifecycleEvent` が発火しないため、明示的に有効化する。
+  // 未サポートの実装に当たっても致命的ではないので失敗は握りつぶす。
+  try {
+    await cdp.send("Page.setLifecycleEventsEnabled", { enabled: true });
+  } catch {
+    // 一部の CDP 実装ではサポートされていない可能性がある
+  }
+
+  let unsubscribed = false;
+
+  /**
+   * `DOM.childNodeInserted` / `DOM.childNodeRemoved` / `DOM.attributeModified`
+   * は「フロントエンドが過去に発見済みのノード」にしか発火しない CDP 仕様。
+   * `DOM.getDocument` でドキュメント全体 (Shadow DOM / iframe を含む) を一度
+   * 走査して node tracking を有効化しないと、SPA のロード進行 (スケルトン
+   * 差し替え、aria-busy トグル等) が一切届かない。
+   *
+   * `DOM.documentUpdated` は既存 nodeId を全て無効化するため、その都度この
+   * 関数を呼び直して追跡を張り直す必要がある。
+   */
+  async function trackDocument(): Promise<void> {
+    if (unsubscribed) return;
+    try {
+      await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    } catch {
+      // ブラウザが閉じられた / セッションが死んだ等は握りつぶす
+    }
+  }
+
+  await trackDocument();
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pendingCause: AXUpdateCause | null = null;
   let extractInFlight: Promise<void> | null = null;
-  let unsubscribed = false;
 
   async function runExtract(cause: AXUpdateCause): Promise<void> {
     if (unsubscribed) return;
@@ -135,11 +165,18 @@ export async function subscribeAXTreeUpdates(
     }, delayMs);
   }
 
-  const onDocumentUpdated = (): void => schedule("document", debounceMs);
+  const onDocumentUpdated = (): void => {
+    // documentUpdated は既存 nodeId を全て無効化する。再追跡しないと、
+    // 新しいドキュメント上での childNode/attribute 変更を取りこぼす。
+    void trackDocument();
+    schedule("document", debounceMs);
+  };
   const onFrameNavigated = (params: unknown): void => {
     const { frame } = params as FrameNavigatedParams;
     // メインフレーム (parentId なし) のみ追従。iframe の遷移は無視する。
     if (!frame || frame.parentId) return;
+    // ナビゲーション直後も documentUpdated と同じく追跡を張り直す。
+    void trackDocument();
     schedule("navigation", debounceMs);
   };
   const onLifecycleEvent = (params: unknown): void => {

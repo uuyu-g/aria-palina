@@ -25,17 +25,62 @@ function makeClientWithTree(snapshots: Array<Array<{ id: string; role: string }>
 }
 
 describe("subscribeAXTreeUpdates", () => {
-  test("DOM.enable と Page.enable を発行する", async () => {
+  test("DOM.enable / Page.enable / Page.setLifecycleEventsEnabled / DOM.getDocument を発行する", async () => {
     const { client } = createMockCDPClient();
     const send = vi.fn(async () => ({})) as typeof client.send;
     client.send = send;
 
     const sub = await subscribeAXTreeUpdates(client, () => {});
-    const methods = (send as unknown as { mock: { calls: unknown[][] } }).mock.calls.map(
-      (c) => c[0],
-    );
+    const calls = (send as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const methods = calls.map((c) => c[0]);
+    // 粗粒度イベント有効化
     expect(methods).toContain("DOM.enable");
     expect(methods).toContain("Page.enable");
+    // Page.lifecycleEvent を確実に発火させるため明示的に有効化する
+    expect(methods).toContain("Page.setLifecycleEventsEnabled");
+    // mutation イベントは「発見済みノード」にしか発火しない CDP 仕様のため、
+    // 全ノードを front-end に載せておく必要がある
+    const getDocCall = calls.find((c) => c[0] === "DOM.getDocument");
+    expect(getDocCall).toBeDefined();
+    expect(getDocCall?.[1]).toEqual({ depth: -1, pierce: true });
+    await sub.unsubscribe();
+  });
+
+  test("DOM.documentUpdated 時に DOM.getDocument を再発行してノード追跡を張り直す", async () => {
+    vi.useFakeTimers();
+    try {
+      const { client, emit } = makeClientWithTree([[{ id: "1", role: "button" }]]);
+      const send = client.send as unknown as { mock: { calls: unknown[][] } };
+      const sub = await subscribeAXTreeUpdates(client, () => {}, { debounceMs: 50 });
+
+      const initialGetDoc = send.mock.calls.filter((c) => c[0] === "DOM.getDocument").length;
+      expect(initialGetDoc).toBe(1);
+
+      emit("DOM.documentUpdated", {});
+      await vi.advanceTimersByTimeAsync(80);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const afterGetDoc = send.mock.calls.filter((c) => c[0] === "DOM.getDocument").length;
+      expect(afterGetDoc).toBe(2);
+      await sub.unsubscribe();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("Page.setLifecycleEventsEnabled が未サポートでも初期化は成功する", async () => {
+    const { client } = createMockCDPClient();
+    client.send = vi.fn(async (method: string) => {
+      if (method === "Page.setLifecycleEventsEnabled") {
+        throw new Error("'Page.setLifecycleEventsEnabled' wasn't found");
+      }
+      return {};
+    }) as typeof client.send;
+
+    // throw しないことだけ検証 (フォールバックして粗粒度イベントは引き続き
+    // 動作することを期待)
+    const sub = await subscribeAXTreeUpdates(client, () => {});
     await sub.unsubscribe();
   });
 

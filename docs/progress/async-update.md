@@ -227,3 +227,34 @@ cause 優先順位 `manual > navigation > document > lifecycle > mutation` で
 - `@aria-palina/cli` 側 (`LiveBridge` / `TuiArgs` / CLI フラグ) は変更なし。
   TUI は既定で新しい購読が有効になるため、追加オプションを露出しなくても
   「ローディング中 → 完成」の遷移が自動で届く。
+
+### 追加修正: CDP ノード追跡の有効化
+
+実機 (https://github.com/uuyu-g) で「ロードが終わっても TUI が更新されない」
+問題を踏み、初期化シーケンスに 2 つの CDP コマンドを追加した:
+
+- **`DOM.getDocument({ depth: -1, pierce: true })`** —
+  CDP の `DOM.childNodeInserted` / `DOM.childNodeRemoved` /
+  `DOM.attributeModified` は「フロントエンドが過去に発見済みのノード」に
+  しか発火しない仕様。`DOM.enable` だけだと front-end 側のノードトラッキング
+  が空で、mutation イベントが一切届かなかった。`DOM.getDocument` で
+  Shadow DOM・iframe を含む全ノードを一度走査して追跡を有効化する。
+- **`Page.setLifecycleEventsEnabled({ enabled: true })`** —
+  一部 Chrome バージョンでは `Page.enable` だけだと `Page.lifecycleEvent`
+  が発火しない。明示的に有効化することで `load` / `networkIdle` を確実に拾う。
+  未サポートの CDP 実装に当たった場合は握りつぶしてフォールバックする。
+
+加えて `DOM.documentUpdated` / `Page.frameNavigated` のハンドラで
+`DOM.getDocument` を再発行するようにした。documentUpdated は既存 nodeId を
+全て無効化するため、再追跡しないと新ドキュメント上の mutation を取りこぼす
+ためである。
+
+#### 追加テスト
+
+`packages/core/src/__tests__/subscribe-ax-updates.test.ts`:
+
+- `DOM.enable` / `Page.enable` / `Page.setLifecycleEventsEnabled` /
+  `DOM.getDocument` の 4 コマンドが初期化時に発行される
+- `DOM.documentUpdated` 後に `DOM.getDocument` が再発行される
+- `Page.setLifecycleEventsEnabled` が CDP 側で未サポート (例外 throw) でも
+  初期化が成功する
