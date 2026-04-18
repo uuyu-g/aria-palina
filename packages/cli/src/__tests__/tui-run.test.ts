@@ -356,6 +356,104 @@ describe("runTui", () => {
     });
   });
 
+  test("actionBridge.click はクリック CDP 発行後に自動で再抽出して live 更新を流す", async () => {
+    // `subscribeAXTreeUpdates` は `DOM.attributeModified` を購読しないため、
+    // aria-checked 等の状態変化は subscribe 経由では届かない。`ActionBridge.click`
+    // が明示的に refresh を叩くことで TUI 側が最新状態を取れることを保証する。
+    const stderr = createWritableBuffer();
+    const cdpCalls: Array<{ method: string; params: unknown }> = [];
+    const factory: BrowserFactory = async () => ({
+      async newCDPSessionForUrl(): Promise<MinimalCDPSession> {
+        return {
+          async send(method: string, params?: Record<string, unknown>) {
+            cdpCalls.push({ method, params });
+            if (method === "DOM.getBoxModel") {
+              return { model: { content: [0, 0, 10, 0, 10, 10, 0, 10] } };
+            }
+            if (method === "Accessibility.getFullAXTree") {
+              // トグル後の aria-checked=true を模擬した Raw AX ツリー。
+              return {
+                nodes: [
+                  {
+                    nodeId: "1",
+                    ignored: false,
+                    role: { type: "role", value: "checkbox" },
+                    name: { type: "computedString", value: "通知" },
+                    properties: [{ name: "checked", value: { type: "boolean", value: true } }],
+                    backendDOMNodeId: 42,
+                  },
+                ],
+              };
+            }
+            return {};
+          },
+          on() {},
+          off() {},
+        };
+      },
+      async close() {},
+    });
+
+    const captured: { element?: unknown } = {};
+    const initial: A11yNode[] = [
+      {
+        backendNodeId: 42,
+        role: "checkbox",
+        name: "通知",
+        depth: 0,
+        properties: {},
+        state: { checked: false },
+        speechText: "[checkbox] 通知",
+        isFocusable: true,
+        isIgnored: false,
+      },
+    ];
+    const renderDone = Promise.withResolvers<void>();
+    const renderer: TuiRenderer = (element): TuiRenderResult => {
+      captured.element = element;
+      return {
+        waitUntilExit: () => renderDone.promise,
+        unmount() {},
+      };
+    };
+
+    const runPromise = runTui(BASE_ARGS, {
+      stderr: stderr.stream,
+      isTTY: true,
+      browserFactory: factory,
+      renderer,
+      extractor: async () => initial,
+    });
+
+    // Render 完了まで 1 マイクロタスク待つ。
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    const element = captured.element as {
+      props: {
+        actionBridge: { click: (n: A11yNode) => Promise<void> };
+        liveBridge: {
+          subscribe: (l: (u: { nodes: A11yNode[] }) => void) => () => void;
+        };
+      };
+    };
+    const received: A11yNode[][] = [];
+    const unsubscribe = element.props.liveBridge.subscribe((u) => received.push(u.nodes));
+
+    await element.props.actionBridge.click(initial[0]!);
+
+    const methods = cdpCalls.map((c) => c.method);
+    expect(methods).toContain("Input.dispatchMouseEvent");
+    // クリック後の refresh が `Accessibility.getFullAXTree` を発行している。
+    expect(methods).toContain("Accessibility.getFullAXTree");
+    // live 購読者には最新の state.checked=true が届く。
+    expect(received).toHaveLength(1);
+    expect(received[0]?.[0]?.state.checked).toBe(true);
+
+    unsubscribe();
+    renderDone.resolve();
+    await runPromise;
+  });
+
   test("Chromium 未インストールのエラーは日本語で案内する", async () => {
     const stderr = createWritableBuffer();
     const factory: BrowserFactory = async () => {
