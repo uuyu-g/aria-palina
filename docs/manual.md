@@ -36,6 +36,27 @@ $ npm install -D @aria-palina/test-utils
 | `--url`, `-u` | (必須) | 検証対象の URL（ローカルサーバーも可） |
 | `--tui` | `false` | TUI モードで起動する。未指定時は CLI モード |
 | `--headed` | `false` | ヘッドレスモードを無効にし、ブラウザの GUI を表示する（TUI モードでは Matrix View ハイライト同期が有効になる） |
+| `--user-data-dir` | `~/.palina/profile` | ブラウザの永続プロファイル（Cookie・セッション等）を保存するディレクトリ |
+| `--no-persist` | `false` | 永続プロファイルを無効化し、その都度クリーンな一時コンテキストで起動する |
+
+#### 🍪 永続ブラウザコンテキスト
+
+デフォルトで `palina` は Playwright の `launchPersistentContext` を使って
+`~/.palina/profile` にプロファイルを保存します。ログイン済みのセッションや
+Cookie、ローカルストレージが次回起動時にも引き継がれるため、認証が必要なページを
+何度も検証するときに毎回ログインし直す必要がありません。
+
+```bash
+# 初回: ログインしてから Ctrl+C で閉じる
+$ palina --headed --tui https://example.com/login
+
+# 次回以降: 同じプロファイルでログイン状態のまま検証できる
+$ palina --headed --tui https://example.com/dashboard
+```
+
+別プロジェクト用にプロファイルを分けたい場合は `--user-data-dir` で任意の
+ディレクトリを指定してください。クリーンな状態で検証したい場合は `--no-persist`
+を付けます。
 
 ### CLI モード専用オプション
 

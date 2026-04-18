@@ -17,6 +17,8 @@ describe("parseCliArgs", () => {
         wait: "network-idle",
         idleTime: 500,
         timeout: 30000,
+        persist: true,
+        userDataDir: undefined,
       },
     });
   });
@@ -295,6 +297,30 @@ describe("parseCliArgs", () => {
       args: expect.objectContaining({
         role: expect.arrayContaining(["main", "navigation", "heading"]),
       }),
+    });
+  });
+
+  test("デフォルトでは persist が true で userDataDir は未指定になる", () => {
+    const result = parseCliArgs(["-u", "https://x.com"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ persist: true, userDataDir: undefined }),
+    });
+  });
+
+  test("--no-persist 指定時は persist が false になる", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--no-persist"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ persist: false }),
+    });
+  });
+
+  test("--user-data-dir 指定時はそのパスが userDataDir に入る", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--user-data-dir", "/tmp/profile"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ userDataDir: "/tmp/profile", persist: true }),
     });
   });
 });

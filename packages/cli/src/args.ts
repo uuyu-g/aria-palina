@@ -15,6 +15,8 @@ const HELP_TEXT = `palina — ページのアクセシビリティツリーを N
       --no-color     カラーなし出力を強制
       --headed       ブラウザを表示して実行
       --tui          TUI モードで起動 (Ink ベースのインタラクティブ UI)
+      --user-data-dir <path>  ブラウザプロファイルの保存先 (デフォルト: ~/.palina/profile)
+      --no-persist   ブラウザの状態を保持しない (デフォルトは保持)
   -w, --wait <strategy>  待機戦略: "network-idle" (デフォルト) | "none"
       --idle-time <ms>   ネットワークアイドル判定の静穏時間 (デフォルト: 500)
   -t, --timeout <ms>     最大待機時間 (デフォルト: 30000)
@@ -41,6 +43,8 @@ export interface CliArgs {
   wait: "none" | "network-idle";
   idleTime: number;
   timeout: number;
+  persist: boolean;
+  userDataDir: string | undefined;
 }
 
 const ROLE_ALIASES: Record<string, string[]> = {
@@ -77,6 +81,8 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
         color: { type: "boolean" },
         "no-color": { type: "boolean" },
         tui: { type: "boolean", default: false },
+        "user-data-dir": { type: "string" },
+        "no-persist": { type: "boolean", default: false },
         wait: { type: "string", short: "w", default: "network-idle" },
         "idle-time": { type: "string", default: "500" },
         timeout: { type: "string", short: "t", default: "30000" },
@@ -200,6 +206,10 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
       ]
     : undefined;
 
+  const userDataDirRaw = values["user-data-dir"] as string | undefined;
+  const userDataDir = userDataDirRaw && userDataDirRaw.length > 0 ? userDataDirRaw : undefined;
+  const persist = !(values["no-persist"] as boolean);
+
   return {
     ok: true,
     args: {
@@ -213,6 +223,8 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
       wait,
       idleTime,
       timeout,
+      persist,
+      userDataDir,
     },
   };
 }

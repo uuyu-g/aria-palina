@@ -2,6 +2,7 @@ import type { A11yNode } from "@aria-palina/core";
 import { describe, expect, test } from "vite-plus/test";
 import type {
   BrowserFactory,
+  BrowserFactoryOptions,
   BrowserHandle,
   TuiArgs,
   TuiRenderer,
@@ -18,16 +19,21 @@ const BASE_ARGS: TuiArgs = {
   wait: "none",
   idleTime: 500,
   timeout: 30_000,
+  persist: true,
+  userDataDir: undefined,
 };
 
 function fakeBrowserFactory(opts?: { throwOnSession?: boolean }): {
   factory: BrowserFactory;
   closed: { value: boolean };
   cdpCalls: string[];
+  receivedOpts: { value: BrowserFactoryOptions | null };
 } {
   const closed = { value: false };
   const cdpCalls: string[] = [];
-  const factory: BrowserFactory = async () => {
+  const receivedOpts: { value: BrowserFactoryOptions | null } = { value: null };
+  const factory: BrowserFactory = async (factoryOpts) => {
+    receivedOpts.value = factoryOpts;
     const handle: BrowserHandle = {
       async newCDPSessionForUrl(): Promise<MinimalCDPSession> {
         if (opts?.throwOnSession) throw new Error("CDP connection failed");
@@ -46,7 +52,7 @@ function fakeBrowserFactory(opts?: { throwOnSession?: boolean }): {
     };
     return handle;
   };
-  return { factory, closed, cdpCalls };
+  return { factory, closed, cdpCalls, receivedOpts };
 }
 
 /** テスト用: waitUntilExit が即座に resolve する fake renderer。 */
@@ -301,6 +307,28 @@ describe("runTui", () => {
     expect(stderr.value).toContain("ハイライト同期が失敗しました");
     expect(stderr.value).toContain("Target closed");
     expect(closed.value).toBe(true);
+  });
+
+  test("persist と userDataDir が browserFactory に受け渡される", async () => {
+    const stderr = createWritableBuffer();
+    const { factory, receivedOpts } = fakeBrowserFactory();
+
+    await runTui(
+      { ...BASE_ARGS, persist: false, userDataDir: "/tmp/tui-profile" },
+      {
+        stderr: stderr.stream,
+        isTTY: true,
+        browserFactory: factory,
+        renderer: captureRenderer({}),
+        extractor: async () => makeNodes(1),
+      },
+    );
+
+    expect(receivedOpts.value).toEqual({
+      headed: false,
+      persist: false,
+      userDataDir: "/tmp/tui-profile",
+    });
   });
 
   test("Chromium 未インストールのエラーは日本語で案内する", async () => {

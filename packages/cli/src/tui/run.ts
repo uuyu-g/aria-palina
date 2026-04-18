@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import type { A11yNode, ICDPClient } from "@aria-palina/core";
 import {
   clearHighlight,
@@ -27,6 +29,8 @@ export interface TuiArgs {
   wait: "none" | "network-idle";
   idleTime: number;
   timeout: number;
+  persist: boolean;
+  userDataDir: string | undefined;
 }
 
 export interface BrowserHandle {
@@ -34,7 +38,21 @@ export interface BrowserHandle {
   close(): Promise<void>;
 }
 
-export type BrowserFactory = (opts: { headed: boolean }) => Promise<BrowserHandle>;
+export interface BrowserFactoryOptions {
+  headed: boolean;
+  persist: boolean;
+  userDataDir: string | undefined;
+}
+
+export type BrowserFactory = (opts: BrowserFactoryOptions) => Promise<BrowserHandle>;
+
+/**
+ * `--user-data-dir` 未指定かつ永続化有効時のデフォルトプロファイルパス。
+ * CLI 側の `defaultUserDataDir` と揃えて `~/.palina/profile` に固定する。
+ */
+export function defaultUserDataDir(): string {
+  return path.join(os.homedir(), ".palina", "profile");
+}
 
 export interface TuiRenderResult {
   waitUntilExit(): Promise<void>;
@@ -57,14 +75,31 @@ export interface TuiIO {
   extractor?: (session: MinimalCDPSession, args: TuiArgs) => Promise<A11yNode[]>;
 }
 
-async function defaultBrowserFactory(opts: { headed: boolean }): Promise<BrowserHandle> {
+async function defaultBrowserFactory(opts: BrowserFactoryOptions): Promise<BrowserHandle> {
   const { chromium } = await import("playwright-core");
-  const browser = await chromium.launch({ headless: !opts.headed });
   // headed 時は viewport を null にして OS ウィンドウサイズに追従させる
   // (Playwright 既定の 1280x720 固定だとリサイズしてもレスポンシブが効かないため)
-  const context = await browser.newContext({
-    viewport: opts.headed ? null : { width: 1280, height: 720 },
-  });
+  const viewport = opts.headed ? null : { width: 1280, height: 720 };
+  const headless = !opts.headed;
+
+  if (opts.persist) {
+    const dir = opts.userDataDir ?? defaultUserDataDir();
+    const context = await chromium.launchPersistentContext(dir, { headless, viewport });
+    return {
+      async newCDPSessionForUrl(url: string): Promise<MinimalCDPSession> {
+        const page = await context.newPage();
+        await page.goto(url, { waitUntil: "domcontentloaded" });
+        const session = await context.newCDPSession(page);
+        return session as unknown as MinimalCDPSession;
+      },
+      async close(): Promise<void> {
+        await context.close();
+      },
+    };
+  }
+
+  const browser = await chromium.launch({ headless });
+  const context = await browser.newContext({ viewport });
   return {
     async newCDPSessionForUrl(url: string): Promise<MinimalCDPSession> {
       const page = await context.newPage();
@@ -181,7 +216,11 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
   let highlightAdapter: ICDPClient | null = null;
   let highlightFirstError: unknown = null;
   try {
-    handle = await browserFactory({ headed: args.headed });
+    handle = await browserFactory({
+      headed: args.headed,
+      persist: args.persist,
+      userDataDir: args.userDataDir,
+    });
     const session = await handle.newCDPSessionForUrl(args.url);
     const nodes = await extractor(session, args);
 
