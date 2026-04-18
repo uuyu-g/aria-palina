@@ -160,11 +160,27 @@ describe("parseCliArgs", () => {
     });
   });
 
-  test("--wait のデフォルト値は network-idle になる", () => {
+  test("--wait のデフォルト値は CLI ワンショットでは network-idle になる", () => {
     const result = parseCliArgs(["-u", "https://example.com"]);
     expect(result).toEqual({
       ok: true,
       args: expect.objectContaining({ wait: "network-idle" }),
+    });
+  });
+
+  test("--wait のデフォルト値は --tui 指定時には none になる (ライブ購読で事後追従できるため)", () => {
+    const result = parseCliArgs(["-u", "https://example.com", "--tui"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ wait: "none", tui: true }),
+    });
+  });
+
+  test("--tui でも --wait=network-idle を明示すれば尊重される", () => {
+    const result = parseCliArgs(["-u", "https://example.com", "--tui", "--wait", "network-idle"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ wait: "network-idle", tui: true }),
     });
   });
 

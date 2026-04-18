@@ -97,6 +97,15 @@ $ palina -u http://localhost:3000 -f text | grep "^\[ボタン\]" | wc -l
 $ palina --tui --url http://localhost:3000
 ```
 
+> **待機戦略のデフォルト**: CLI ワンショットは抽出が 1 回きりのため
+> `--wait=network-idle` (500ms のネットワーク静穏待ち) が既定ですが、
+> TUI モードではライブ購読 (`DOM.documentUpdated` / `Page.frameNavigated` /
+> `Page.lifecycleEvent` を契機に自動再抽出) と `r` キーの手動再取得で
+> 事後追従できるため、`--wait=none` を既定としています。WebSocket や
+> ポーリングで常時ネットワーク活動のある SPA でも TUI の初期描画が
+> 遅延しません。network-idle 相当のブロッキング待機が必要なら
+> `--wait=network-idle` を明示してください。
+
 #### 🌟 Matrix View (`--tui --headed`)
 
 `--tui` と `--headed` を同時に指定すると、ブラウザが立ち上がります。TUI でカーソルを動かすと、ブラウザ上の対応する要素が **青くハイライト** され、視覚とセマンティクスのズレを一瞬で特定できます。

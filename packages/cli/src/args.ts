@@ -17,7 +17,9 @@ const HELP_TEXT = `palina — ページのアクセシビリティツリーを N
       --tui          TUI モードで起動 (Ink ベースのインタラクティブ UI)
       --user-data-dir <path>  ブラウザプロファイルの保存先 (デフォルト: ~/.palina/profile)
       --no-persist   ブラウザの状態を保持しない (デフォルトは保持)
-  -w, --wait <strategy>  待機戦略: "network-idle" (デフォルト) | "none"
+  -w, --wait <strategy>  待機戦略: "network-idle" | "none"
+                         デフォルトは CLI ワンショットで network-idle、TUI では none
+                         (TUI はライブ購読と r キーで事後再抽出できるため)
       --idle-time <ms>   ネットワークアイドル判定の静穏時間 (デフォルト: 500)
   -t, --timeout <ms>     最大待機時間 (デフォルト: 30000)
       --wait-for-selector <css>   CSS セレクタがマッチするまで追加で待機
@@ -91,7 +93,7 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
         tui: { type: "boolean", default: false },
         "user-data-dir": { type: "string" },
         "no-persist": { type: "boolean", default: false },
-        wait: { type: "string", short: "w", default: "network-idle" },
+        wait: { type: "string", short: "w" },
         "idle-time": { type: "string", default: "500" },
         timeout: { type: "string", short: "t", default: "30000" },
         "wait-for-selector": { type: "string" },
@@ -147,7 +149,13 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
     };
   }
 
-  const wait = values.wait as string;
+  const tuiRequested = (values.tui as boolean) ?? false;
+  const waitRaw = values.wait as string | undefined;
+  // `wait` のデフォルトはモード依存。TUI はライブ購読と `r` キーで
+  // 事後の再抽出が効くため、起動が体感で止まらない `"none"` を既定とし、
+  // 必要なら `--wait=network-idle` で opt-in させる。ワンショット CLI は
+  // 1 回きりの抽出なので従来通り `"network-idle"` を既定とする。
+  const wait = waitRaw ?? (tuiRequested ? "none" : "network-idle");
   if (wait !== "none" && wait !== "network-idle") {
     return {
       ok: false,
@@ -256,7 +264,7 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
       role: role?.length ? role : undefined,
       indent,
       color,
-      tui: (values.tui as boolean) ?? false,
+      tui: tuiRequested,
       wait,
       idleTime,
       timeout,
