@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import {
   delay,
   extractA11yTree,
@@ -16,7 +18,21 @@ export interface BrowserHandle {
   close(): Promise<void>;
 }
 
-export type BrowserFactory = (opts: { headed: boolean }) => Promise<BrowserHandle>;
+export interface BrowserFactoryOptions {
+  headed: boolean;
+  persist: boolean;
+  userDataDir: string | undefined;
+}
+
+export type BrowserFactory = (opts: BrowserFactoryOptions) => Promise<BrowserHandle>;
+
+/**
+ * `--user-data-dir` 未指定かつ永続化有効時のデフォルトプロファイルパス。
+ * `~/.palina/profile` に固定。存在しなければ Playwright が自動生成する。
+ */
+export function defaultUserDataDir(): string {
+  return path.join(os.homedir(), ".palina", "profile");
+}
 
 /**
  * `--tui` フラグ時に実行される TUI ランナー。
@@ -36,14 +52,34 @@ export interface RunIO {
   tuiRunner?: TuiRunner;
 }
 
-async function defaultBrowserFactory(opts: { headed: boolean }): Promise<BrowserHandle> {
+async function defaultBrowserFactory(opts: BrowserFactoryOptions): Promise<BrowserHandle> {
   const { chromium } = await import("playwright-core");
-  const browser = await chromium.launch({ headless: !opts.headed });
   // headed 時は viewport を null にして OS ウィンドウサイズに追従させる
   // (Playwright 既定の 1280x720 固定だとリサイズしてもレスポンシブが効かないため)
-  const context = await browser.newContext({
-    viewport: opts.headed ? null : { width: 1280, height: 720 },
-  });
+  const viewport = opts.headed ? null : { width: 1280, height: 720 };
+  const headless = !opts.headed;
+
+  if (opts.persist) {
+    const dir = opts.userDataDir ?? defaultUserDataDir();
+    const context = await chromium.launchPersistentContext(dir, { headless, viewport });
+    return {
+      async newCDPSessionForUrl(url: string): Promise<MinimalCDPSession> {
+        // launchPersistentContext は起動時に空タブを 1 つ自動で開く。
+        // そのページを再利用し、見えない空タブが残らないようにする。
+        const existing = context.pages()[0];
+        const page = existing ?? (await context.newPage());
+        await page.goto(url, { waitUntil: "domcontentloaded" });
+        const session = await context.newCDPSession(page);
+        return session as unknown as MinimalCDPSession;
+      },
+      async close(): Promise<void> {
+        await context.close();
+      },
+    };
+  }
+
+  const browser = await chromium.launch({ headless });
+  const context = await browser.newContext({ viewport });
   return {
     async newCDPSessionForUrl(url: string): Promise<MinimalCDPSession> {
       const page = await context.newPage();
@@ -93,7 +129,11 @@ export async function runCli(argv: readonly string[], io?: Partial<RunIO>): Prom
 
   let handle: BrowserHandle | undefined;
   try {
-    handle = await browserFactory({ headed: args.headed });
+    handle = await browserFactory({
+      headed: args.headed,
+      persist: args.persist,
+      userDataDir: args.userDataDir,
+    });
     const session = await handle.newCDPSessionForUrl(args.url);
     const adapter = adaptCDPSession(session);
 

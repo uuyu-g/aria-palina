@@ -1,7 +1,9 @@
 export {
   runTui,
   defaultTuiIO,
+  defaultUserDataDir,
   type BrowserFactory,
+  type BrowserFactoryOptions,
   type BrowserHandle,
   type LiveBridge,
   type LiveUpdate,

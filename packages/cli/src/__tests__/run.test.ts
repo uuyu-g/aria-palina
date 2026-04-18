@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vite-plus/test";
-import type { BrowserFactory, BrowserHandle } from "../run.js";
+import type { BrowserFactory, BrowserFactoryOptions, BrowserHandle } from "../run.js";
 import { runCli } from "../run.js";
 import type { MinimalCDPSession } from "../playwright-cdp-adapter.js";
 import { createWritableBuffer } from "./helpers.js";
@@ -7,8 +7,10 @@ import { createWritableBuffer } from "./helpers.js";
 function fakeBrowserFactory(opts?: { throwOnExtract?: boolean }): {
   factory: BrowserFactory;
   closed: { value: boolean };
+  receivedOpts: { value: BrowserFactoryOptions | null };
 } {
   const closed = { value: false };
+  const receivedOpts: { value: BrowserFactoryOptions | null } = { value: null };
   const fakeRawNodes = [
     {
       nodeId: "1",
@@ -28,7 +30,8 @@ function fakeBrowserFactory(opts?: { throwOnExtract?: boolean }): {
     },
   ];
 
-  const factory: BrowserFactory = async () => {
+  const factory: BrowserFactory = async (factoryOpts) => {
+    receivedOpts.value = factoryOpts;
     const handle: BrowserHandle = {
       async newCDPSessionForUrl(): Promise<MinimalCDPSession> {
         return {
@@ -49,7 +52,7 @@ function fakeBrowserFactory(opts?: { throwOnExtract?: boolean }): {
     return handle;
   };
 
-  return { factory, closed };
+  return { factory, closed, receivedOpts };
 }
 
 describe("runCli", () => {
@@ -258,5 +261,58 @@ describe("runCli", () => {
 
     expect(code).toBe(0);
     expect(stdout.value.trimEnd()).toBe("");
+  });
+
+  test("デフォルトでは persist:true かつ userDataDir:undefined で factory が呼ばれる", async () => {
+    const stdout = createWritableBuffer();
+    const stderr = createWritableBuffer();
+    const { factory, receivedOpts } = fakeBrowserFactory();
+
+    await runCli(["https://example.com", "--wait", "none"], {
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      isTTY: false,
+      browserFactory: factory,
+    });
+
+    expect(receivedOpts.value).toEqual({
+      headed: false,
+      persist: true,
+      userDataDir: undefined,
+    });
+  });
+
+  test("--no-persist 指定時は persist:false が factory に渡る", async () => {
+    const stdout = createWritableBuffer();
+    const stderr = createWritableBuffer();
+    const { factory, receivedOpts } = fakeBrowserFactory();
+
+    await runCli(["https://example.com", "--no-persist", "--wait", "none"], {
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      isTTY: false,
+      browserFactory: factory,
+    });
+
+    expect(receivedOpts.value?.persist).toBe(false);
+  });
+
+  test("--user-data-dir 指定時はそのパスが factory に渡る", async () => {
+    const stdout = createWritableBuffer();
+    const stderr = createWritableBuffer();
+    const { factory, receivedOpts } = fakeBrowserFactory();
+
+    await runCli(["https://example.com", "--user-data-dir", "/tmp/palina-test", "--wait", "none"], {
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      isTTY: false,
+      browserFactory: factory,
+    });
+
+    expect(receivedOpts.value).toEqual({
+      headed: false,
+      persist: true,
+      userDataDir: "/tmp/palina-test",
+    });
   });
 });

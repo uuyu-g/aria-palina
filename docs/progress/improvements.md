@@ -99,3 +99,36 @@ Phase 6 で実装した「TUI カーソル → ブラウザ Overlay ハイライ
 - 核心の不変条件 (headless では Overlay / DOM 系コマンドを一切発行しない) は
   維持。`highlightController = null` のパスは変わらないため headless テストは
   そのまま緑。
+
+## 永続ブラウザコンテキスト (CLI / TUI)
+
+`--headed` でブラウザを立ち上げるたびにログイン状態や Cookie が失われるため、
+認証が必要なページの検証で毎回サインインし直す必要があった。Playwright の
+`chromium.launchPersistentContext(userDataDir, ...)` を既定で使うようにして、
+ブラウザの状態を次回起動時まで引き継げるようにした。
+
+**ポリシー: 既定オン・オプトアウト**
+
+- デフォルト: `~/.palina/profile` を `userDataDir` として永続コンテキストで起動。
+  ディレクトリは Playwright が自動生成する。
+- `--user-data-dir <path>` で保存先を任意のディレクトリに差し替え可能
+  (プロジェクトごとに分離するユースケース)。
+- `--no-persist` で従来の挙動 (`launch` + `newContext`) に戻せる。CI や
+  プロファイル汚染を避けたいテストで使う。
+
+**実装メモ:**
+
+- `CliArgs` / `TuiArgs` に `persist: boolean` と `userDataDir: string | undefined`
+  を追加。`parseCliArgs` のデフォルトは `persist: true`, `userDataDir: undefined`
+  (factory 側で既定パスを解決) とし、tri-state は導入しない。
+- `BrowserFactory` の引数に `BrowserFactoryOptions` (`headed` / `persist` /
+  `userDataDir`) を新設。`defaultBrowserFactory` は `persist` で
+  `launchPersistentContext` と `launch` + `newContext` を分岐する。`close()`
+  は前者は `context.close()`, 後者は `browser.close()` で Playwright の
+  ライフサイクルに合わせる。
+- 既定パス `~/.palina/profile` は `run.ts` / `tui/run.ts` の両方で
+  `defaultUserDataDir()` として定義。ユーザーが factory を差し替える際の
+  オプション型参照のため `BrowserFactoryOptions` と `defaultUserDataDir` を
+  `@aria-palina/cli` / `@aria-palina/cli/tui` から export している。
+- headless + 永続化の組み合わせも素直に動作する (認証済みスナップショットを
+  CI が再利用するユースケース)。`--headed` との直交性は保った。
