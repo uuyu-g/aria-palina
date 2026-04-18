@@ -625,6 +625,146 @@ describe("flattenAXTree", () => {
       expect(result[2]!.name).toBe("Public");
     });
 
+    test("名前なし listitem の唯一の link 子は compound 行として 1 行に圧縮される", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "list",
+          ignored: false,
+          role: { type: "role", value: "list" },
+          childIds: ["li"],
+        }),
+        node({
+          nodeId: "li",
+          parentId: "list",
+          ignored: false,
+          role: { type: "role", value: "listitem" },
+          name: { type: "computedString", value: "" },
+          childIds: ["link"],
+        }),
+        node({
+          nodeId: "link",
+          parentId: "li",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          name: { type: "computedString", value: "ホーム" },
+          properties: [{ name: "focusable", value: { type: "boolean", value: true } }],
+        }),
+      ]);
+      // listitem が link を 1 行に吸収し、link ノードは配列から消える
+      expect(result).toHaveLength(2);
+      expect(result[0]!.speechText).toBe("[list]");
+      expect(result[1]!.speechText).toBe("[listitem] [link] ホーム");
+      expect(result[1]!.role).toBe("listitem");
+      // Tab モードで到達できるよう focusable state が親へ伝播する
+      expect(result[1]!.isFocusable).toBe(true);
+    });
+
+    test("名前なし cell の唯一の button 子は compound 行に圧縮され disabled 状態も伝播する", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "table",
+          ignored: false,
+          role: { type: "role", value: "table" },
+          childIds: ["row"],
+        }),
+        node({
+          nodeId: "row",
+          parentId: "table",
+          ignored: false,
+          role: { type: "role", value: "row" },
+          childIds: ["cell"],
+        }),
+        node({
+          nodeId: "cell",
+          parentId: "row",
+          ignored: false,
+          role: { type: "role", value: "cell" },
+          name: { type: "computedString", value: "" },
+          childIds: ["btn"],
+        }),
+        node({
+          nodeId: "btn",
+          parentId: "cell",
+          ignored: false,
+          role: { type: "role", value: "button" },
+          name: { type: "computedString", value: "削除" },
+          properties: [
+            { name: "focusable", value: { type: "boolean", value: true } },
+            { name: "disabled", value: { type: "boolean", value: true } },
+          ],
+        }),
+      ]);
+      // cell の行に button の role・name・状態が 1 行にまとめられる
+      const cell = result.find((n) => n.role === "cell");
+      expect(result.some((n) => n.role === "button")).toBe(false);
+      expect(cell?.speechText).toBe("[cell 1/1] [button] 削除 (利用不可)");
+      expect(cell?.isFocusable).toBe(true);
+      expect(cell?.state).toMatchObject({ disabled: true, focusable: true });
+    });
+
+    test("名前なし listitem の唯一の heading 子は heading level 付きで圧縮される", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "li",
+          ignored: false,
+          role: { type: "role", value: "listitem" },
+          name: { type: "computedString", value: "" },
+          childIds: ["h"],
+        }),
+        node({
+          nodeId: "h",
+          parentId: "li",
+          ignored: false,
+          role: { type: "role", value: "heading" },
+          name: { type: "computedString", value: "トピック" },
+          properties: [{ name: "level", value: { type: "integer", value: 3 } }],
+        }),
+      ]);
+      expect(result).toHaveLength(1);
+      expect(result[0]!.speechText).toBe("[listitem] [heading3] トピック");
+    });
+
+    test("compound 圧縮対象外のラッパー (paragraph) は非 StaticText 子を吸収しない", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "p",
+          ignored: false,
+          role: { type: "role", value: "paragraph" },
+          name: { type: "computedString", value: "" },
+          childIds: ["link"],
+        }),
+        node({
+          nodeId: "link",
+          parentId: "p",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          name: { type: "computedString", value: "詳細" },
+        }),
+      ]);
+      // paragraph は wrapper ロールに含まれないため compound 吸収は行わない
+      expect(result.map((n) => n.role)).toEqual(["paragraph", "link"]);
+    });
+
+    test("名前付き listitem は compound 圧縮されない", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "li",
+          ignored: false,
+          role: { type: "role", value: "listitem" },
+          name: { type: "computedString", value: "重要" },
+          childIds: ["link"],
+        }),
+        node({
+          nodeId: "link",
+          parentId: "li",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          name: { type: "computedString", value: "ホーム" },
+        }),
+      ]);
+      expect(result.map((n) => n.role)).toEqual(["listitem", "link"]);
+    });
+
     test("rowgroup は透過的に子を辿る", () => {
       const result = flattenAXTree([
         node({

@@ -1,6 +1,6 @@
 # 📊 Implementation Progress
 
-> **Last Updated:** 2026-04-15
+> **Last Updated:** 2026-04-18
 > **Related:** [DD §4 Roadmap](./dd.md) / [PRD](./prd.md)
 
 本ドキュメントは、`docs/dd.md` §4「開発ロードマップ」の各フェーズの進捗を
@@ -147,6 +147,41 @@ TUI (Phase 4 以降) では、CLI とは異なる **2段階の情報密度** を
 - TUI 一覧用に `speechText` とは別の簡潔表記を生成する関数を
   `@aria-palina/tui` 側に用意するか、`buildSpeechText` に verbosity オプション
   を追加するかは Phase 4 着手時に決定する。
+
+## ネスト圧縮: wrapper ロールの compound 行吸収 (Core)
+
+`<ul><li><a>ホーム</a></li></ul>` や `<table>…<td><button>削除</button></td></table>`
+のように、**名前を持たない 1 要素ラッパー** が単一のインタラクティブ子を包む
+深いネストが、リスト・テーブルを含むページで頻出して TUI / CLI 出力を
+読みづらくしていた。
+
+`flattenAXTree` の既存後処理 `absorbLoneStaticText` (StaticText 専用の
+テキスト吸収) を `absorbLoneChild` に汎用化し、以下のロールが単一の非テキスト
+子を持つ場合は 1 行の compound 表記へ圧縮するようにした。
+
+- `listitem` / `menuitem` / `treeitem`
+- `cell` / `gridcell`
+
+**出力例:**
+
+| 構造 | Before | After |
+| ---- | ------ | ----- |
+| `<li><a>ホーム</a></li>` | `[listitem]` + `[link] ホーム` (2 行) | `[listitem] [link] ホーム` (1 行) |
+| `<td><button>削除</button></td>` | `[cell 1/1]` + `[button] 削除 (利用不可)` | `[cell 1/1] [button] 削除 (利用不可)` |
+| `<li><h3>トピック</h3></li>` | `[listitem]` + `[heading3] トピック` | `[listitem] [heading3] トピック` |
+
+**設計判断:**
+
+- `COMPOUND_WRAPPER_ROLES` を絞り込むことで、たとえば `<main>` や `<paragraph>`
+  のようにセマンティックな意味を持つラッパーは畳まない。これら landmark /
+  段落は単独行として残る方が H / D ジャンプや読み上げ順序の追跡に都合が良い。
+- `isFocusable` と `state` を子から親へマージするため、Tab モード (`findNext`) の
+  到達性や disabled の読み上げは保持される。
+- compound 行は親の role 表記 (例: `cell 1/1`, tableColumnHeader 付き) を
+  そのまま残し、その後ろへ子の `buildSpeechText` 出力 (`[link] ...`, `[button] ...`)
+  を連結する。セルのテーブル位置情報を失わずに 1 行に集約できる。
+- StaticText 吸収は従来通りの挙動を維持。`name=""` 親 + 単独 StaticText 子 の
+  既存テスト群はそのまま緑。
 
 ## Phase 3 実装メモ
 
