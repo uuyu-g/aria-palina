@@ -50,7 +50,7 @@ export interface RawAXNode {
   childIds?: string[];
   /** 親ノードの `nodeId`。ルート判定に使う。 */
   parentId?: string;
-  /** 対応する DOM ノードの backend ID (双方向同期用)。 */
+  /** 対応する DOM ノードの backend ID (ハイライト同期用)。 */
   backendDOMNodeId?: number;
 }
 

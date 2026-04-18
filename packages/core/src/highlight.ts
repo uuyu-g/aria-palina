@@ -2,8 +2,9 @@
  * CDP `Overlay` ドメインを通じてブラウザ画面上の DOM 要素をハイライトする
  * 薄いラッパー群。
  *
- * Phase 6 (Matrix View / Headed モード同期) で TUI のカーソル位置と
- * `--headed` で起動した実ブラウザの表示を双方向同期するために使う。
+ * Phase 6 (Matrix View / Headed モード同期) で TUI のカーソル位置を
+ * `--headed` で起動した実ブラウザ画面に反映する (TUI → ブラウザの
+ * 片方向同期) ために使う。
  *
  * 本モジュールは {@link ICDPClient} だけに依存し、Playwright や
  * `chrome.debugger` といった具体実装には依存しない。アダプタ層は
@@ -11,7 +12,7 @@
  * 呼び、終了時に `clearHighlight` (および必要なら `disableOverlay`) を
  * 呼ぶ責務を負う。
  *
- * @see ../../../docs/dd.md §3.3 「Two-way Matrix View (双方向同期)」
+ * @see ../../../docs/dd.md §3.3 「Matrix View (Headed モード同期)」
  */
 
 import type { ICDPClient } from "./cdp-client.js";
