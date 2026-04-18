@@ -22,6 +22,10 @@
       "import": "./dist/tui/index.mjs"
     }
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "vp pack --dts --clean src/index.ts src/bin.ts src/tui/index.ts"
   },
