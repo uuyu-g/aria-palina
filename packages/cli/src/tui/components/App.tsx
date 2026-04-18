@@ -10,6 +10,7 @@ import { Box, Text, useApp, useInput, useStdout, type Key } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ActionBridge, LiveBridge, LiveUpdate } from "../run.js";
 import { useHighlight, type HighlightController } from "../use-highlight.js";
+import { useMouse } from "../use-mouse.js";
 import { FilterModal } from "./FilterModal.js";
 import { VirtualList } from "./VirtualList.js";
 
@@ -205,6 +206,26 @@ export function App({
     () => Math.max(1, viewport + FOOTER_LINES - MODAL_CHROME_LINES),
     [viewport],
   );
+
+  // マウスホイールをキーボードの ↑/↓ と同じ振る舞いに直結させる。
+  // フィルタモーダル中は絞り込みリスト内を移動し、通常モードではフル配列上を移動する。
+  useMouse({
+    onWheelUp: () => moveWithWheel(-1),
+    onWheelDown: () => moveWithWheel(1),
+  });
+
+  function moveWithWheel(direction: 1 | -1): void {
+    if (modalKind !== null) {
+      if (filteredToFull.length === 0) return;
+      const last = filteredToFull.length - 1;
+      const next = Math.max(0, Math.min(last, modalCursor + direction));
+      const full = filteredToFull[next];
+      if (full !== undefined) setCursor(full);
+      return;
+    }
+    if (nodes.length === 0) return;
+    setCursor((c) => Math.max(0, Math.min(nodes.length - 1, c + direction)));
+  }
 
   useInput((input, key) => {
     if (input === "q" || (key.ctrl && input === "c")) {

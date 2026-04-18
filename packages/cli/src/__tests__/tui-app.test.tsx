@@ -101,6 +101,61 @@ describe("App", () => {
     unmount();
   });
 
+  test("マウスホイール下方向でカーソルが 1 つ下に進む", async () => {
+    const nodes = makeNodes(5);
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("\u001B[<65;1;1M"); // SGR wheel-down
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("2/5");
+    unmount();
+  });
+
+  test("マウスホイール上方向でカーソルが 1 つ上に戻る", async () => {
+    const nodes = makeNodes(5);
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("\u001B[B"); // ↓ → 2/5
+    await waitFrames();
+    stdin.write("\u001B[<64;1;1M"); // SGR wheel-up
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("1/5");
+    unmount();
+  });
+
+  test("マウスホイールは nodes の末尾でそれ以上進まない", async () => {
+    const nodes = makeNodes(3);
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("G"); // 3/3
+    await waitFrames();
+    stdin.write("\u001B[<65;1;1M"); // wheel-down
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("3/3");
+    unmount();
+  });
+
+  test("フィルタモーダル中のマウスホイールは絞り込みリスト内を移動する", async () => {
+    const nodes = makeMixedNodes();
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("h"); // heading モーダル (選択 = 見出し 1)
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("> [heading] 見出し 1");
+    stdin.write("\u001B[<65;1;1M"); // wheel-down
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("> [heading] 見出し 2");
+    unmount();
+  });
+
   test("↑ キーは先頭では止まる", async () => {
     const nodes = makeNodes(5);
     const { lastFrame, stdin, unmount } = render(
