@@ -41,8 +41,15 @@ const DEFAULT_CONTENT_COLOR: RGBA = { r: 0, g: 120, b: 255, a: 0.5 };
 /**
  * `Overlay` ドメインを enable する。`highlightNode` を呼ぶ前に
  * 1 度だけ呼べばよい (CDP 仕様上、複数回呼んでも冪等)。
+ *
+ * `Overlay.highlightNode` は内部で DOM ノードツリーを引くため、
+ * Chromium の実装上 `DOM` ドメインが有効化されていないと backendNodeId
+ * から実際の要素を解決できない (ハイライトが出ない)。そのため本関数は
+ * `DOM.enable` も併せて発行する。Chrome DevTools 本体も同様の順序で
+ * 有効化しており、この組み合わせがハイライト動作の前提となる。
  */
 export async function enableOverlay(cdp: ICDPClient): Promise<void> {
+  await cdp.send("DOM.enable");
   await cdp.send("Overlay.enable");
 }
 

@@ -21,10 +21,13 @@ function recordingClient(): { client: ICDPClient; calls: SendCall[] } {
 }
 
 describe("enableOverlay", () => {
-  test("Overlay.enable コマンドを 1 度だけ送る", async () => {
+  test("DOM.enable と Overlay.enable を順に送る", async () => {
     const { client, calls } = recordingClient();
     await enableOverlay(client);
-    expect(calls).toEqual([{ method: "Overlay.enable", params: undefined }]);
+    expect(calls).toEqual([
+      { method: "DOM.enable", params: undefined },
+      { method: "Overlay.enable", params: undefined },
+    ]);
   });
 });
 

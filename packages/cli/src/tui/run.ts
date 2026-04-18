@@ -119,16 +119,28 @@ function safeIgnore(p: Promise<unknown>): Promise<void> {
 
 /**
  * `--headed` 時に App へ渡す HighlightController。
- * CDP コマンドはすべて fire-and-forget で発行し、ブラウザが既に閉じられて
- * いた場合などのエラーは TUI 描画を壊さないよう完全に黙殺する。
+ * CDP コマンドはすべて fire-and-forget で発行する。ブラウザが既に閉じられて
+ * いた場合の失敗は TUI 描画を壊さないよう握りつぶすが、**最初の 1 回**の
+ * 失敗だけは `onFirstError` で通知する。ユーザーが「ハイライトされない」
+ * 問題に気付けるようにするため、`runTui` の finally でまとめて stderr に
+ * 書き出す。
  */
-function createHighlightController(adapter: ICDPClient): HighlightController {
+function createHighlightController(
+  adapter: ICDPClient,
+  onFirstError: (error: unknown) => void,
+): HighlightController {
+  let errorReported = false;
+  const onError = (error: unknown): void => {
+    if (errorReported) return;
+    errorReported = true;
+    onFirstError(error);
+  };
   return {
     highlight(backendNodeId: number) {
-      void safeIgnore(highlightNode(adapter, backendNodeId));
+      void highlightNode(adapter, backendNodeId).catch(onError);
     },
     clear() {
-      void safeIgnore(clearHighlight(adapter));
+      void clearHighlight(adapter).catch(onError);
     },
   };
 }
@@ -157,6 +169,7 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
   let handle: BrowserHandle | undefined;
   let highlightController: HighlightController | null = null;
   let highlightAdapter: ICDPClient | null = null;
+  let highlightFirstError: unknown = null;
   try {
     handle = await browserFactory({ headed: args.headed });
     const session = await handle.newCDPSessionForUrl(args.url);
@@ -168,10 +181,14 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
       highlightAdapter = adaptCDPSession(session);
       try {
         await enableOverlay(highlightAdapter);
-        highlightController = createHighlightController(highlightAdapter);
-      } catch {
-        // Overlay enable に失敗しても TUI 起動自体は止めない
+        highlightController = createHighlightController(highlightAdapter, (error) => {
+          if (highlightFirstError === null) highlightFirstError = error;
+        });
+      } catch (error) {
+        // Overlay enable に失敗しても TUI 起動自体は止めない。ただし理由を
+        // 終了時に stderr へ表示してユーザーが原因を追えるようにする。
         highlightAdapter = null;
+        highlightFirstError = error;
       }
     }
 
@@ -191,6 +208,13 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
     if (highlightAdapter !== null) {
       await safeIgnore(clearHighlight(highlightAdapter));
       await safeIgnore(disableOverlay(highlightAdapter));
+    }
+    if (args.headed && highlightFirstError !== null) {
+      const msg =
+        highlightFirstError instanceof Error
+          ? highlightFirstError.message
+          : String(highlightFirstError);
+      stderr.write(`ハイライト同期が失敗しました: ${msg}\n`);
     }
     return 0;
   } catch (error) {
