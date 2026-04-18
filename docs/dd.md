@@ -26,7 +26,7 @@
 > **Note:** 初期計画では CLI と TUI を `@aria-palina/cli` / `@aria-palina/tui` の 2
 > パッケージに分離していたが、`vitest` のように**単一パッケージ + モードフラグ**の
 > 方が概念的に一貫し、CDP アダプタ等の重複も解消できるため、実装過程で
-> `@aria-palina/cli` に統合した。再編の経緯は `docs/progress.md` を参照。
+> `@aria-palina/cli` に統合した。再編の経緯は [`docs/progress/cli-tui-merge.md`](./progress/cli-tui-merge.md) を参照。
 
 ### 1.2 ユーザー向けバイナリ配布 (Distribution)
 
