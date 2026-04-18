@@ -672,6 +672,254 @@ describe("App highlight controller", () => {
     unmount();
   });
 
+  test("Enter でクリックロール (button) の要素に対し actionBridge.click が呼ばれる", async () => {
+    const nodes = makeMixedNodes();
+    const clicks: A11yNode[] = [];
+    const actionBridge: import("../tui/run.js").ActionBridge = {
+      async click(node) {
+        clicks.push(node);
+      },
+    };
+    const { stdin, lastFrame, unmount } = render(
+      <App url="https://x.com" nodes={nodes} viewportOverride={10} actionBridge={actionBridge} />,
+    );
+    await waitFrames();
+    stdin.write("\t"); // Tab → cursor=2 (btn1, role=button)
+    await waitFrames();
+    stdin.write("\r"); // Enter
+    await waitFrames();
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0]?.backendNodeId).toBe(3); // btn1 の backendNodeId
+    expect(lastFrame() ?? "").toContain("✱ クリック: btn1");
+    unmount();
+  });
+
+  test("Enter は非クリックロール (heading) では何もしない", async () => {
+    const nodes = makeMixedNodes();
+    const clicks: A11yNode[] = [];
+    const actionBridge: import("../tui/run.js").ActionBridge = {
+      async click(node) {
+        clicks.push(node);
+      },
+    };
+    const { stdin, lastFrame, unmount } = render(
+      <App url="https://x.com" nodes={nodes} viewportOverride={10} actionBridge={actionBridge} />,
+    );
+    await waitFrames();
+    stdin.write("\u001B[B"); // ↓ → cursor=1 (heading)
+    await waitFrames();
+    stdin.write("\r"); // Enter
+    await waitFrames();
+    expect(clicks).toEqual([]);
+    expect(lastFrame() ?? "").not.toContain("✱ クリック");
+    unmount();
+  });
+
+  test("Space でトグルロール (checkbox) に対し actionBridge.click が呼ばれる", async () => {
+    const nodes: A11yNode[] = [
+      makeNode({
+        backendNodeId: 10,
+        role: "checkbox",
+        isFocusable: true,
+        name: "通知を受け取る",
+        speechText: "[checkbox] 通知を受け取る",
+      }),
+    ];
+    const clicks: A11yNode[] = [];
+    const actionBridge: import("../tui/run.js").ActionBridge = {
+      async click(node) {
+        clicks.push(node);
+      },
+    };
+    const { stdin, lastFrame, unmount } = render(
+      <App url="https://x.com" nodes={nodes} viewportOverride={10} actionBridge={actionBridge} />,
+    );
+    await waitFrames();
+    stdin.write(" "); // Space
+    await waitFrames();
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0]?.backendNodeId).toBe(10);
+    expect(lastFrame() ?? "").toContain("✱ クリック: 通知を受け取る");
+    unmount();
+  });
+
+  test("Space は非トグルロール (link) では何もしない", async () => {
+    const nodes: A11yNode[] = [
+      makeNode({
+        backendNodeId: 10,
+        role: "link",
+        isFocusable: true,
+        name: "トップ",
+        speechText: "[link] トップ",
+      }),
+    ];
+    const clicks: A11yNode[] = [];
+    const actionBridge: import("../tui/run.js").ActionBridge = {
+      async click(node) {
+        clicks.push(node);
+      },
+    };
+    const { stdin, unmount } = render(
+      <App url="https://x.com" nodes={nodes} viewportOverride={10} actionBridge={actionBridge} />,
+    );
+    await waitFrames();
+    stdin.write(" "); // Space
+    await waitFrames();
+    expect(clicks).toEqual([]);
+    unmount();
+  });
+
+  test("ヘッドレス時の初回操作で headless 警告が表示されクリックは通常通り発火する", async () => {
+    const nodes = makeMixedNodes();
+    const clicks: A11yNode[] = [];
+    const actionBridge: import("../tui/run.js").ActionBridge = {
+      async click(node) {
+        clicks.push(node);
+      },
+    };
+    const { stdin, lastFrame, unmount } = render(
+      <App
+        url="https://x.com"
+        nodes={nodes}
+        viewportOverride={10}
+        actionBridge={actionBridge}
+        headless
+      />,
+    );
+    await waitFrames();
+    stdin.write("\t"); // → cursor=2 (btn1)
+    await waitFrames();
+    stdin.write("\r"); // Enter
+    await waitFrames();
+    expect(clicks).toHaveLength(1);
+    const firstFrame = lastFrame() ?? "";
+    expect(firstFrame).toContain("[headless]");
+    expect(firstFrame).toContain("--headed");
+    // 2 回目はもう警告は出ず、通常のクリックフィードバックに切り替わる。
+    stdin.write("\t"); // → 次の interactive (btn2, index=6)
+    await waitFrames();
+    stdin.write("\r"); // Enter
+    await waitFrames();
+    expect(clicks).toHaveLength(2);
+    const secondFrame = lastFrame() ?? "";
+    expect(secondFrame).not.toContain("[headless]");
+    expect(secondFrame).toContain("✱ クリック: btn2");
+    unmount();
+  });
+
+  test("actionBridge 未指定のとき Enter / Space は no-op", async () => {
+    const nodes = makeMixedNodes();
+    const { stdin, lastFrame, unmount } = render(
+      <App url="https://x.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    stdin.write("\t"); // cursor=2 (btn1)
+    await waitFrames();
+    stdin.write("\r");
+    await waitFrames();
+    stdin.write(" ");
+    await waitFrames();
+    const frame = lastFrame() ?? "";
+    expect(frame).not.toContain("✱ クリック");
+    expect(frame).not.toContain("[headless]");
+    unmount();
+  });
+
+  test("クリック後に live 更新が来ても backendNodeId 基準でカーソルが保たれる", async () => {
+    const first: A11yNode[] = [
+      makeNode({
+        backendNodeId: 5,
+        role: "button",
+        isFocusable: true,
+        name: "開く",
+        speechText: "[button] 開く",
+      }),
+      makeNode({
+        backendNodeId: 6,
+        role: "button",
+        isFocusable: true,
+        name: "閉じる",
+        speechText: "[button] 閉じる",
+      }),
+    ];
+    // クリック後 "閉じる" ボタンが先頭へ移動するシナリオ
+    const second: A11yNode[] = [
+      makeNode({
+        backendNodeId: 7,
+        role: "heading",
+        name: "ダイアログ",
+        speechText: "[heading] ダイアログ",
+      }),
+      first[1]!,
+      first[0]!,
+    ];
+    let listener: ((u: import("../tui/run.js").LiveUpdate) => void) | null = null;
+    const bridge: import("../tui/run.js").LiveBridge = {
+      getSnapshot: () => first,
+      subscribe: (l) => {
+        listener = l;
+        return () => {
+          listener = null;
+        };
+      },
+      refresh: async () => {},
+      toggleLive: async () => true,
+      isLiveEnabled: () => true,
+    };
+    const actionBridge: import("../tui/run.js").ActionBridge = {
+      async click() {},
+    };
+    const { lastFrame, stdin, unmount } = render(
+      <App
+        url="https://x.com"
+        nodes={first}
+        viewportOverride={10}
+        liveBridge={bridge}
+        actionBridge={actionBridge}
+      />,
+    );
+    await waitFrames();
+    stdin.write("\t"); // Tab → cursor=0 (button, backendNodeId=5)。既に 0 なので Tab は次へ → cursor=1
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("2/2"); // backendNodeId=6
+    stdin.write("\r"); // Enter
+    await waitFrames();
+    // 新しいツリー: "閉じる" (backendNodeId=6) が index=1 → カーソルも index=1
+    listener?.({ nodes: second, cause: "document", liveChanges: [] });
+    await waitFrames();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("2/3"); // cursor=1 (2番目)
+    expect(frame).toContain("閉じる");
+    unmount();
+  });
+
+  test("backendNodeId=0 のノードでは Enter は no-op", async () => {
+    const nodes: A11yNode[] = [
+      makeNode({
+        backendNodeId: 0,
+        role: "button",
+        isFocusable: true,
+        name: "text-only",
+        speechText: "[button] text-only",
+      }),
+    ];
+    const clicks: A11yNode[] = [];
+    const actionBridge: import("../tui/run.js").ActionBridge = {
+      async click(node) {
+        clicks.push(node);
+      },
+    };
+    const { stdin, lastFrame, unmount } = render(
+      <App url="https://x.com" nodes={nodes} viewportOverride={10} actionBridge={actionBridge} />,
+    );
+    await waitFrames();
+    stdin.write("\r"); // Enter
+    await waitFrames();
+    expect(clicks).toEqual([]);
+    expect(lastFrame() ?? "").not.toContain("✱ クリック");
+    unmount();
+  });
+
   test("assertive な live 変更はステータスバーに ! 付きで表示される", async () => {
     const nodes = makeNodes(2);
     let listener: ((u: import("../tui/run.js").LiveUpdate) => void) | null = null;

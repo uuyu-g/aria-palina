@@ -2,6 +2,7 @@ export {
   runTui,
   defaultTuiIO,
   defaultUserDataDir,
+  type ActionBridge,
   type BrowserFactory,
   type BrowserFactoryOptions,
   type BrowserHandle,

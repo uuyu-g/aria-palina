@@ -3,6 +3,7 @@ import path from "node:path";
 import type { A11yNode, AXUpdateCause, AXUpdateSubscription, ICDPClient } from "@aria-palina/core";
 import {
   clearHighlight,
+  clickNode,
   delay,
   diffLiveRegions,
   disableOverlay,
@@ -65,6 +66,15 @@ export function defaultUserDataDir(): string {
   return path.join(os.homedir(), ".palina", "profile");
 }
 
+/**
+ * `Enter` / `Space` 直後に再抽出までに挟む待機時間 (ms)。
+ *
+ * 同期的なハンドラ (チェックボックスのトグル等) なら即座に DOM が更新される
+ * が、onClick で setState を呼ぶような React ベース UI は次の microtask 以降
+ * で DOM に反映されるため、余裕を持たせた debounce を入れてから再抽出する。
+ */
+const POST_ACTION_REFRESH_DELAY_MS = 120;
+
 export interface TuiRenderResult {
   waitUntilExit(): Promise<void>;
   unmount(): void;
@@ -106,6 +116,17 @@ export interface LiveBridge {
   refresh(): Promise<void>;
   toggleLive(): Promise<boolean>;
   isLiveEnabled(): boolean;
+}
+
+/**
+ * `Enter` / `Space` でカーソル下要素をクリック・トグルするためのブリッジ。
+ *
+ * App は `click(node)` を呼ぶだけで、CDP 呼び出しの具体 (座標取得・マウス
+ * イベント発行) は `runTui` 側が {@link clickNode} に委譲する。副作用で
+ * 発生した DOM 変化は既存の {@link LiveBridge} が自動で拾う。
+ */
+export interface ActionBridge {
+  click(node: A11yNode): Promise<void>;
 }
 
 async function defaultBrowserFactory(opts: BrowserFactoryOptions): Promise<BrowserHandle> {
@@ -368,11 +389,27 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
       }
     }
 
+    const liveBridge = live.bridge;
+    const actionBridge: ActionBridge = {
+      async click(node: A11yNode): Promise<void> {
+        await clickNode(adapter, node.backendNodeId);
+        // `subscribeAXTreeUpdates` は負荷軽減のため `DOM.documentUpdated` /
+        // `Page.frameNavigated` / `Page.lifecycleEvent` のみ購読しており、
+        // クリックで発火する `DOM.attributeModified` (aria-checked /
+        // aria-pressed / aria-expanded 等) は拾わない。確定操作の直後に
+        // 明示的な再抽出を走らせて、TUI 側の状態表示を追従させる。
+        await delay(POST_ACTION_REFRESH_DELAY_MS);
+        await liveBridge.refresh();
+      },
+    };
+
     const element = createElement(App, {
       url: args.url,
       nodes: filteredNodes,
       liveBridge: live.bridge,
       highlightController,
+      actionBridge,
+      headless: !args.headed,
     });
 
     const instance = await renderer(element, {

@@ -34,3 +34,4 @@ export {
   type HighlightConfig,
   type RGBA,
 } from "./highlight.js";
+export { clickNode, focusNode } from "./actions.js";

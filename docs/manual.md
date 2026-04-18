@@ -97,6 +97,15 @@ $ palina -u http://localhost:3000 -f text | grep "^\[ボタン\]" | wc -l
 $ palina --tui --url http://localhost:3000
 ```
 
+> **待機戦略のデフォルト**: CLI ワンショットは抽出が 1 回きりのため
+> `--wait=network-idle` (500ms のネットワーク静穏待ち) が既定ですが、
+> TUI モードではライブ購読 (`DOM.documentUpdated` / `Page.frameNavigated` /
+> `Page.lifecycleEvent` を契機に自動再抽出) と `r` キーの手動再取得で
+> 事後追従できるため、`--wait=none` を既定としています。WebSocket や
+> ポーリングで常時ネットワーク活動のある SPA でも TUI の初期描画が
+> 遅延しません。network-idle 相当のブロッキング待機が必要なら
+> `--wait=network-idle` を明示してください。
+
 #### 🌟 Matrix View (`--tui --headed`)
 
 `--tui` と `--headed` を同時に指定すると、ブラウザが立ち上がります。TUI でカーソルを動かすと、ブラウザ上の対応する要素が **青くハイライト** され、視覚とセマンティクスのズレを一瞬で特定できます。
@@ -117,13 +126,21 @@ $ palina --tui --headed --url http://localhost:3000
 | `↑` / `↓` | フィルタ中 | 絞り込まれたリスト内を 1 件ずつ移動 |
 | `←` / `→` | フィルタ中 | フィルタ種別を切り替え（見出し ↔ ランドマーク ↔ インタラクティブ） |
 | `Esc` | フィルタ中 | フィルタを解除して通常モードへ戻る |
-| `Enter` | アクション | 現在フォーカスしている要素のクリックを発火（リンク遷移やボタン展開） |
+| `Enter` | アクション | 現在カーソル下の要素をクリック（`button` / `link` / `menuitem` / `tab` / `option` 等）。クリック後は `✱ クリック: <label>` がフッターに表示される |
+| `Space` | アクション | 現在カーソル下の要素をトグル（`checkbox` / `radio` / `switch` / `button`）。内部的には Enter と同じく CDP クリックとして発火 |
 | `Q` または `Ctrl+C` | システム | TUI を終了し、バックグラウンドのブラウザを閉じる |
 
 > **フィルタモード**: `h` / `d` を単独で押すと、マッチしないノードは一覧から隠れ、
 > ヘッダーに `[見出し]` のように現在の種別だけが表示されます。
 > ←/→ で heading → landmark → interactive と種別を巡回でき、`Tab` を押すと解除して
 > 通常モードの Tab ナビゲーションへ遷移します。
+
+> **確定操作 (`Enter` / `Space`)**: NVDA の Browse Mode と同じく、
+> `Enter` でリンク・ボタンをクリック、`Space` でチェックボックス等をトグルします。
+> DOM の変化はライブ更新で自動反映され、カーソルは `backendNodeId` を手掛かりに
+> 同じ要素へ復元されます。ヘッドレス (`--headed` なし) で実行した場合は操作結果が
+> 目視できないため、初回操作時にフッターへ `[headless] 操作結果は --headed で視認可能`
+> と 1 度だけ警告が表示されます。
 
 ## 2. Chrome DevTools 拡張機能
 
