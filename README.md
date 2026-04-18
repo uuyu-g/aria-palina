@@ -6,10 +6,10 @@
 
 ## Packages
 
-| パッケージ | 概要 |
-| --- | --- |
-| [`@aria-palina/core`](./packages/core) | 環境非依存の AOM 抽出・平坦化・NVDA 風テキスト生成エンジン (pure TypeScript) |
-| [`@aria-palina/cli`](./packages/cli) | `palina` コマンド。Playwright ワンショット CLI + Ink ベースの対話 TUI (`--tui`) |
+| パッケージ                             | 概要                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------- |
+| [`@aria-palina/core`](./packages/core) | 環境非依存の AOM 抽出・平坦化・NVDA 風テキスト生成エンジン (pure TypeScript)    |
+| [`@aria-palina/cli`](./packages/cli)   | `palina` コマンド。Playwright ワンショット CLI + Ink ベースの対話 TUI (`--tui`) |
 
 ## Quick Start
 
