@@ -11,37 +11,118 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: Lint / Check / Test / Build
+  changes:
+    name: Detect changes
     runs-on: ubuntu-latest
-
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            code:
+              - 'packages/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'tsconfig*.json'
+              - '.github/workflows/**'
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+  format:
+    name: Format
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm fmt --check
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+  lint:
+    name: Lint
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
 
-      - name: Format check
-        run: pnpm fmt --check
+  typecheck:
+    name: Type check
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
 
-      - name: Lint
-        run: pnpm lint
+  build:
+    name: Build
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
 
-      - name: Type check
-        run: pnpm check
+  test:
+    name: Test
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
 
-      - name: Build
-        run: pnpm build
-
-      - name: Test
-        run: pnpm test
+  ci-success:
+    name: CI Success
+    needs: [changes, format, lint, typecheck, build, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all required jobs succeeded or were skipped
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "$results"
+          if echo "$results" | grep -q '"result": "failure"'; then
+            echo "A required job failed."
+            exit 1
+          fi
+          if echo "$results" | grep -q '"result": "cancelled"'; then
+            echo "A required job was cancelled."
+            exit 1
+          fi
