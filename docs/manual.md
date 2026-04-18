@@ -35,7 +35,7 @@ $ npm install -D @aria-palina/test-utils
 | --- | --- | --- |
 | `--url`, `-u` | (必須) | 検証対象の URL（ローカルサーバーも可） |
 | `--tui` | `false` | TUI モードで起動する。未指定時は CLI モード |
-| `--headed` | `false` | ヘッドレスモードを無効にし、ブラウザの GUI を表示する（TUI モードでは Two-way Matrix View が有効になる） |
+| `--headed` | `false` | ヘッドレスモードを無効にし、ブラウザの GUI を表示する（TUI モードでは Matrix View ハイライト同期が有効になる） |
 
 ### CLI モード専用オプション
 
@@ -76,7 +76,7 @@ $ palina -u http://localhost:3000 -f text | grep "^\[ボタン\]" | wc -l
 $ palina --tui --url http://localhost:3000
 ```
 
-#### 🌟 Two-way Matrix View (`--tui --headed`)
+#### 🌟 Matrix View (`--tui --headed`)
 
 `--tui` と `--headed` を同時に指定すると、ブラウザが立ち上がります。TUI でカーソルを動かすと、ブラウザ上の対応する要素が **青くハイライト** され、視覚とセマンティクスのズレを一瞬で特定できます。
 
@@ -118,7 +118,7 @@ $ palina --tui --headed --url http://localhost:3000
 1. 開発中のページで `F12` を押し、DevTools を開きます。
 2. **「aria-palina」タブ** を選択します。
 3. **リアルタイム同期:** ブラウザ上で要素をクリックしてモーダルを開いたり、React のステートが変更されたりすると、DevTools 内のアクセシビリティツリーが自動的に再描画されます。
-4. **双方向ハイライト:** DevTools 内のツリーの行にマウスをホバーさせると、画面上の対応する DOM 要素がハイライトされます。
+4. **ハイライト同期:** DevTools 内のツリーの行にマウスをホバーさせると、画面上の対応する DOM 要素がハイライトされます。
 
 ## 3. 自動テストユーティリティ (`@aria-palina/test-utils`)
 

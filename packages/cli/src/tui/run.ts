@@ -1,9 +1,17 @@
-import type { A11yNode } from "@aria-palina/core";
-import { extractA11yTree, waitForNetworkIdle } from "@aria-palina/core";
+import type { A11yNode, ICDPClient } from "@aria-palina/core";
+import {
+  clearHighlight,
+  disableOverlay,
+  enableOverlay,
+  extractA11yTree,
+  highlightNode,
+  waitForNetworkIdle,
+} from "@aria-palina/core";
 import { createElement } from "react";
 import type { MinimalCDPSession } from "../playwright-cdp-adapter.js";
 import { adaptCDPSession } from "../playwright-cdp-adapter.js";
 import { App } from "./components/App.js";
+import type { HighlightController } from "./use-highlight.js";
 
 /**
  * TUI が利用する CLI 引数の最小形。
@@ -102,6 +110,41 @@ function applyRoleFilter(nodes: A11yNode[], roles: string[] | undefined): A11yNo
   return filtered.map((n) => ({ ...n, depth: n.depth - minDepth }));
 }
 
+function safeIgnore(p: Promise<unknown>): Promise<void> {
+  return p.then(
+    () => undefined,
+    () => undefined,
+  );
+}
+
+/**
+ * `--headed` 時に App へ渡す HighlightController。
+ * CDP コマンドはすべて fire-and-forget で発行する。ブラウザが既に閉じられて
+ * いた場合の失敗は TUI 描画を壊さないよう握りつぶすが、**最初の 1 回**の
+ * 失敗だけは `onFirstError` で通知する。ユーザーが「ハイライトされない」
+ * 問題に気付けるようにするため、`runTui` の finally でまとめて stderr に
+ * 書き出す。
+ */
+function createHighlightController(
+  adapter: ICDPClient,
+  onFirstError: (error: unknown) => void,
+): HighlightController {
+  let errorReported = false;
+  const onError = (error: unknown): void => {
+    if (errorReported) return;
+    errorReported = true;
+    onFirstError(error);
+  };
+  return {
+    highlight(backendNodeId: number) {
+      void highlightNode(adapter, backendNodeId).catch(onError);
+    },
+    clear() {
+      void clearHighlight(adapter).catch(onError);
+    },
+  };
+}
+
 /**
  * TUI モードの実行エントリポイント。
  *
@@ -124,6 +167,9 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
   const extractor = io.extractor ?? defaultExtractor;
 
   let handle: BrowserHandle | undefined;
+  let highlightController: HighlightController | null = null;
+  let highlightAdapter: ICDPClient | null = null;
+  let highlightFirstError: unknown = null;
   try {
     handle = await browserFactory({ headed: args.headed });
     const session = await handle.newCDPSessionForUrl(args.url);
@@ -131,9 +177,25 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
 
     const filteredNodes = applyRoleFilter(nodes, args.role);
 
+    if (args.headed) {
+      highlightAdapter = adaptCDPSession(session);
+      try {
+        await enableOverlay(highlightAdapter);
+        highlightController = createHighlightController(highlightAdapter, (error) => {
+          if (highlightFirstError === null) highlightFirstError = error;
+        });
+      } catch (error) {
+        // Overlay enable に失敗しても TUI 起動自体は止めない。ただし理由を
+        // 終了時に stderr へ表示してユーザーが原因を追えるようにする。
+        highlightAdapter = null;
+        highlightFirstError = error;
+      }
+    }
+
     const element = createElement(App, {
       url: args.url,
       nodes: filteredNodes,
+      highlightController,
     });
 
     const instance = await renderer(element, {
@@ -143,6 +205,17 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
     });
 
     await instance.waitUntilExit();
+    if (highlightAdapter !== null) {
+      await safeIgnore(clearHighlight(highlightAdapter));
+      await safeIgnore(disableOverlay(highlightAdapter));
+    }
+    if (args.headed && highlightFirstError !== null) {
+      const msg =
+        highlightFirstError instanceof Error
+          ? highlightFirstError.message
+          : String(highlightFirstError);
+      stderr.write(`ハイライト同期が失敗しました: ${msg}\n`);
+    }
     return 0;
   } catch (error) {
     if (isBrowserNotFound(error)) {

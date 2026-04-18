@@ -10,7 +10,7 @@
  * @see ../../../docs/dd.md §2.1 「データモデル」
  */
 export interface A11yNode {
-  /** DOM のハイライト（双方向同期）に使用する CDP 内部 ID。 */
+  /** DOM のハイライト同期に使用する CDP 内部 ID。 */
   backendNodeId: number;
 
   /** ARIA ロール（例: `"button"`, `"heading"`）。 */

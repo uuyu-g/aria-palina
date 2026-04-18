@@ -27,7 +27,7 @@
 | 3 | Playwright 統合とワンショット CLI | ✅ Done | [phase-3](./progress/phase-3.md) |
 | 4 | Ink TUI 基盤とパフォーマンス最適化 | ✅ Done | [phase-4](./progress/phase-4.md) |
 | 5 | デュアルナビゲーション実装 (TUI) | ✅ Done | [phase-5](./progress/phase-5.md) |
-| 6 | Matrix View (Headed モード同期) | ⏳ Pending | — |
+| 6 | Matrix View (Headed モード同期) | ✅ Done | [phase-6](./progress/phase-6.md) |
 | 7 | Chrome Extension (DevTools Panel) | ⏳ Pending | — |
 | 8 | Test Utilities (BDD) | ⏳ Pending | — |
 | 9 | 統合バイナリ `palina` の公開 | ⏳ Pending | — |
@@ -42,11 +42,6 @@
 | CLI/TUI パッケージ統合リファクタ | [cli-tui-merge](./progress/cli-tui-merge.md) |
 
 ## 次にやること (Pending フェーズ)
-
-### Phase 6: Matrix View (Headed モード同期)
-
-- Headed ブラウザとの双方向ハイライト同期。
-- 詳細スコープは DD §4 Phase 6 を参照。
 
 ### Phase 7: Chrome Extension (DevTools Panel)
 

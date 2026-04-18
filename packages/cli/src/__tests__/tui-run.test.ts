@@ -23,14 +23,17 @@ const BASE_ARGS: TuiArgs = {
 function fakeBrowserFactory(opts?: { throwOnSession?: boolean }): {
   factory: BrowserFactory;
   closed: { value: boolean };
+  cdpCalls: string[];
 } {
   const closed = { value: false };
+  const cdpCalls: string[] = [];
   const factory: BrowserFactory = async () => {
     const handle: BrowserHandle = {
       async newCDPSessionForUrl(): Promise<MinimalCDPSession> {
         if (opts?.throwOnSession) throw new Error("CDP connection failed");
         return {
-          async send() {
+          async send(method: string) {
+            cdpCalls.push(method);
             return { nodes: [] };
           },
           on() {},
@@ -43,7 +46,7 @@ function fakeBrowserFactory(opts?: { throwOnSession?: boolean }): {
     };
     return handle;
   };
-  return { factory, closed };
+  return { factory, closed, cdpCalls };
 }
 
 /** テスト用: waitUntilExit が即座に resolve する fake renderer。 */
@@ -158,6 +161,95 @@ describe("runTui", () => {
     expect(element.props.nodes[0]?.role).toBe("button");
     // フィルタ後は最小 depth 分引かれて 0 起点になる。
     expect(element.props.nodes[0]?.depth).toBe(0);
+  });
+
+  test("--headed 指定時は Overlay.enable と終了時の hideHighlight/disable を発行する", async () => {
+    const stderr = createWritableBuffer();
+    const { factory, cdpCalls } = fakeBrowserFactory();
+    const captured: { element?: unknown } = {};
+    const nodes = makeNodes(2);
+
+    const code = await runTui(
+      { ...BASE_ARGS, headed: true },
+      {
+        stderr: stderr.stream,
+        isTTY: true,
+        browserFactory: factory,
+        renderer: captureRenderer(captured),
+        extractor: async () => nodes,
+      },
+    );
+
+    expect(code).toBe(0);
+    // DOM.enable は Overlay.highlightNode の前提条件 (Chromium が backendNodeId を
+    // 解決するために必要) なので Overlay.enable より前に発行されている。
+    const domEnableIdx = cdpCalls.indexOf("DOM.enable");
+    const overlayEnableIdx = cdpCalls.indexOf("Overlay.enable");
+    expect(domEnableIdx).toBeGreaterThanOrEqual(0);
+    expect(overlayEnableIdx).toBeGreaterThan(domEnableIdx);
+    expect(cdpCalls).toContain("Overlay.hideHighlight");
+    expect(cdpCalls).toContain("Overlay.disable");
+    const element = captured.element as { props: { highlightController: unknown } };
+    expect(element.props.highlightController).not.toBe(null);
+  });
+
+  test("headless モードでは Overlay/DOM コマンドを一切発行せず controller も null", async () => {
+    const stderr = createWritableBuffer();
+    const { factory, cdpCalls } = fakeBrowserFactory();
+    const captured: { element?: unknown } = {};
+    const nodes = makeNodes(2);
+
+    const code = await runTui(BASE_ARGS, {
+      stderr: stderr.stream,
+      isTTY: true,
+      browserFactory: factory,
+      renderer: captureRenderer(captured),
+      extractor: async () => nodes,
+    });
+
+    expect(code).toBe(0);
+    expect(cdpCalls.some((m) => m.startsWith("Overlay."))).toBe(false);
+    expect(cdpCalls).not.toContain("DOM.enable");
+    const element = captured.element as { props: { highlightController: unknown } };
+    expect(element.props.highlightController).toBe(null);
+  });
+
+  test("--headed で Overlay.enable が失敗した場合は終了時に stderr で案内する", async () => {
+    const stderr = createWritableBuffer();
+    const closed = { value: false };
+    const factory: BrowserFactory = async () => ({
+      async newCDPSessionForUrl(): Promise<MinimalCDPSession> {
+        return {
+          async send(method: string) {
+            if (method === "Overlay.enable") {
+              throw new Error("Target closed");
+            }
+            return { nodes: [] };
+          },
+          on() {},
+          off() {},
+        };
+      },
+      async close() {
+        closed.value = true;
+      },
+    });
+
+    const code = await runTui(
+      { ...BASE_ARGS, headed: true },
+      {
+        stderr: stderr.stream,
+        isTTY: true,
+        browserFactory: factory,
+        renderer: captureRenderer({}),
+        extractor: async () => makeNodes(2),
+      },
+    );
+
+    expect(code).toBe(0);
+    expect(stderr.value).toContain("ハイライト同期が失敗しました");
+    expect(stderr.value).toContain("Target closed");
+    expect(closed.value).toBe(true);
   });
 
   test("Chromium 未インストールのエラーは日本語で案内する", async () => {

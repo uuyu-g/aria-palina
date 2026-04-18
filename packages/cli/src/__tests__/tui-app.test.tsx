@@ -1,7 +1,10 @@
 import type { A11yNode } from "@aria-palina/core";
+import { clearHighlight, highlightNode } from "@aria-palina/core";
 import { describe, expect, test } from "vite-plus/test";
 import { render } from "ink-testing-library";
 import { App } from "../tui/components/App.js";
+import { adaptCDPSession, type MinimalCDPSession } from "../playwright-cdp-adapter.js";
+import type { HighlightController } from "../tui/use-highlight.js";
 import { makeNode, makeNodes } from "./helpers.js";
 
 /** フィルタモード検証用に混合種別のノード列を作成する。 */
@@ -435,5 +438,123 @@ describe("App filter modal", () => {
     expect(frame).not.toContain("種別切替"); // 通常モードに戻っている
     expect(frame).toContain("[3/7]"); // index 2 (btn1) へ移動
     unmount();
+  });
+});
+
+describe("App highlight controller", () => {
+  test("highlightController が null のときは highlight も clear も呼ばれない", async () => {
+    const nodes = makeMixedNodes();
+    const calls: Array<{ kind: "highlight" | "clear"; id?: number }> = [];
+    const { stdin, unmount } = render(
+      <App
+        url="https://example.com"
+        nodes={nodes}
+        viewportOverride={10}
+        highlightController={null}
+        highlightDebounceMs={0}
+      />,
+    );
+    await waitFrames();
+    stdin.write("\u001B[B"); // ↓
+    await waitFrames();
+    unmount();
+    await waitFrames();
+    expect(calls).toEqual([]);
+  });
+
+  test("マウント直後とカーソル変更時に backendNodeId を highlight に渡す", async () => {
+    const nodes = makeMixedNodes();
+    const calls: Array<{ kind: "highlight" | "clear"; id?: number }> = [];
+    const controller = {
+      highlight: (id: number) => calls.push({ kind: "highlight", id }),
+      clear: () => calls.push({ kind: "clear" }),
+    };
+    const { stdin, unmount } = render(
+      <App
+        url="https://example.com"
+        nodes={nodes}
+        viewportOverride={10}
+        highlightController={controller}
+        highlightDebounceMs={0}
+      />,
+    );
+    await waitFrames();
+    stdin.write("\u001B[B"); // ↓ → cursor=1 (見出し 1)
+    await waitFrames();
+    const highlights = calls.filter((c) => c.kind === "highlight").map((c) => c.id);
+    expect(highlights).toEqual([1, 2]); // 初期 cursor=0 (backendNodeId=1) → cursor=1 (backendNodeId=2)
+    unmount();
+  });
+
+  test("App→adaptCDPSession 経由で実際に Overlay.highlightNode が session に届く", async () => {
+    // 実装の結合 (App → HighlightController → adaptCDPSession → session) を
+    // 貫通して、カーソル変更時に CDP `Overlay.highlightNode` コマンドが
+    // セッションへ送られることを検証する。
+    const cdpCalls: Array<{ method: string; params: unknown }> = [];
+    const session: MinimalCDPSession = {
+      async send(method: string, params?: Record<string, unknown>) {
+        cdpCalls.push({ method, params });
+        return {};
+      },
+      on() {},
+      off() {},
+    };
+    const adapter = adaptCDPSession(session);
+    const controller: HighlightController = {
+      highlight(id: number) {
+        void highlightNode(adapter, id);
+      },
+      clear() {
+        void clearHighlight(adapter);
+      },
+    };
+    const nodes = makeMixedNodes();
+
+    const { stdin, unmount } = render(
+      <App
+        url="https://example.com"
+        nodes={nodes}
+        viewportOverride={10}
+        highlightController={controller}
+        highlightDebounceMs={0}
+      />,
+    );
+    await waitFrames();
+    stdin.write("\u001B[B"); // ↓ → cursor=1 (backendNodeId=2)
+    await waitFrames();
+    unmount();
+    await waitFrames();
+
+    const overlayCalls = cdpCalls.filter((c) => c.method === "Overlay.highlightNode");
+    const overlayBackendIds = overlayCalls.map(
+      (c) => (c.params as { backendNodeId: number }).backendNodeId,
+    );
+    // 初期 cursor=0 (backendNodeId=1) とカーソル移動後の backendNodeId=2 の
+    // 両方が CDP に到達している。
+    expect(overlayBackendIds).toEqual([1, 2]);
+    // アンマウント時の clear が Overlay.hideHighlight として届いている。
+    expect(cdpCalls.some((c) => c.method === "Overlay.hideHighlight")).toBe(true);
+  });
+
+  test("アンマウント時に clear が呼ばれる", async () => {
+    const nodes = makeMixedNodes();
+    const calls: Array<{ kind: "highlight" | "clear"; id?: number }> = [];
+    const controller = {
+      highlight: (id: number) => calls.push({ kind: "highlight", id }),
+      clear: () => calls.push({ kind: "clear" }),
+    };
+    const { unmount } = render(
+      <App
+        url="https://example.com"
+        nodes={nodes}
+        viewportOverride={10}
+        highlightController={controller}
+        highlightDebounceMs={0}
+      />,
+    );
+    await waitFrames();
+    unmount();
+    await waitFrames();
+    expect(calls.some((c) => c.kind === "clear")).toBe(true);
   });
 });
