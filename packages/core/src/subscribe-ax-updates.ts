@@ -3,7 +3,7 @@ import type { ICDPClient } from "./cdp-client.js";
 import type { FlattenOptions } from "./flatten.js";
 import type { A11yNode } from "./types.js";
 
-export type AXUpdateCause = "document" | "navigation" | "lifecycle" | "manual";
+export type AXUpdateCause = "document" | "navigation" | "lifecycle" | "mutation" | "manual";
 
 export interface AXUpdateSubscription {
   /** 購読を解除し、`DOM.disable` / `Page.disable` を送信する。 */
@@ -13,8 +13,24 @@ export interface AXUpdateSubscription {
 }
 
 export interface AXUpdateOptions {
-  /** イベント多発時のデバウンス (ms)。@default 200 */
+  /**
+   * 粗粒度イベント (`DOM.documentUpdated` / `Page.frameNavigated` /
+   * `Page.lifecycleEvent`) のデバウンス (ms)。@default 200
+   */
   debounceMs?: number;
+  /**
+   * 細粒度 DOM mutation (`DOM.childNodeInserted` / `DOM.childNodeRemoved` /
+   * `DOM.attributeModified`) のデバウンス (ms)。SPA のロード進行 (スケルトン →
+   * 実データ、`aria-busy` トグル等) は高頻度に発火するため、粗粒度より長めに
+   * 設定して連続変更をまとめる。@default 400
+   */
+  mutationDebounceMs?: number;
+  /**
+   * DOM mutation イベントを購読するか。ローディング進行の TUI 反映を担保する
+   * ため既定で ON。更新頻度が極端に高いページ向けに粗粒度だけで運用したい
+   * 場合は `false` にできる。@default true
+   */
+  subscribeMutations?: boolean;
   /** `flattenAXTree` に渡すオプション。 */
   flatten?: FlattenOptions;
 }
@@ -28,22 +44,45 @@ interface LifecycleEventParams {
 }
 
 const DEFAULT_DEBOUNCE = 200;
+const DEFAULT_MUTATION_DEBOUNCE = 400;
+
+/**
+ * 同一デバウンスウィンドウで複数のイベントが重なった際、どの `cause` を
+ * `onUpdate` に通知するかを決める優先順位。より「確からしい」原因を残す:
+ *
+ * - `manual` は直接 `refresh()` から呼ばれるため常に最優先。
+ * - `navigation` / `document` は「ページ全体の構造変化」の強いシグナル。
+ * - `lifecycle` は `load` / `networkIdle` の節目。
+ * - `mutation` は細粒度で発火数が多く、他シグナルがあればそちらを残す。
+ */
+const CAUSE_PRIORITY: Record<AXUpdateCause, number> = {
+  manual: 5,
+  navigation: 4,
+  document: 3,
+  lifecycle: 2,
+  mutation: 1,
+};
 
 /**
  * ページの DOM/Page イベントを購読して、変化が検出される度に AX ツリーを
  * 再抽出し {@link onUpdate} へ渡す。NVDA の「仮想バッファ自動更新」に相当する。
  *
- * 購読イベントは以下の 3 種。いずれかが届いた時点でデバウンスを張り、
- * {@link AXUpdateOptions.debounceMs | debounceMs} の静穏後に `extractA11yTree`
- * を呼んで `onUpdate` を発火する:
+ * 購読イベントは次の 2 系統。デバウンスを張って静穏化後に `extractA11yTree`
+ * を呼び `onUpdate` を発火する:
  *
+ * **粗粒度** (`debounceMs` / 既定 200ms)
  * - `DOM.documentUpdated` — 文書全体の再構築 (SPA ルーティング後など)
  * - `Page.frameNavigated` — メインフレームのナビゲーション
  * - `Page.lifecycleEvent` — `load` / `networkIdle` ライフサイクル
  *
- * 高頻度な `DOM.childNodeInserted/Removed` は負荷とノイズが大きいため意図的に
- * 購読対象から外している。細粒度変更は直後の `documentUpdated` か手動 refresh
- * (`subscription.refresh()`) で拾う設計。
+ * **細粒度** (`mutationDebounceMs` / 既定 400ms、`subscribeMutations: false` で OFF)
+ * - `DOM.childNodeInserted` / `DOM.childNodeRemoved` — 部分再レンダリング
+ * - `DOM.attributeModified` — `aria-busy` / `aria-expanded` 等の属性トグル
+ *
+ * 細粒度は SPA のロード進行 (スケルトン → 実データ差し替え等) を拾うために
+ * 既定で ON にするが、発火頻度が高いため粗粒度より長めのデバウンスで連続
+ * 変更をまとめて 1 回の再抽出に収束させる。複数イベントが重なった場合は
+ * {@link CAUSE_PRIORITY} 順で最も意味のある cause を `onUpdate` に渡す。
  */
 export async function subscribeAXTreeUpdates(
   cdp: ICDPClient,
@@ -51,15 +90,47 @@ export async function subscribeAXTreeUpdates(
   options?: AXUpdateOptions,
 ): Promise<AXUpdateSubscription> {
   const debounceMs = options?.debounceMs ?? DEFAULT_DEBOUNCE;
+  const mutationDebounceMs = options?.mutationDebounceMs ?? DEFAULT_MUTATION_DEBOUNCE;
+  const subscribeMutations = options?.subscribeMutations ?? true;
   const flattenOpts = options?.flatten;
 
   await cdp.send("DOM.enable");
   await cdp.send("Page.enable");
+  // `Page.enable` のみだと一部の Chrome バージョン / CDP 実装で
+  // `Page.lifecycleEvent` が発火しないため、明示的に有効化する。
+  // 未サポートの実装に当たっても致命的ではないので失敗は握りつぶす。
+  try {
+    await cdp.send("Page.setLifecycleEventsEnabled", { enabled: true });
+  } catch {
+    // 一部の CDP 実装ではサポートされていない可能性がある
+  }
+
+  let unsubscribed = false;
+
+  /**
+   * `DOM.childNodeInserted` / `DOM.childNodeRemoved` / `DOM.attributeModified`
+   * は「フロントエンドが過去に発見済みのノード」にしか発火しない CDP 仕様。
+   * `DOM.getDocument` でドキュメント全体 (Shadow DOM / iframe を含む) を一度
+   * 走査して node tracking を有効化しないと、SPA のロード進行 (スケルトン
+   * 差し替え、aria-busy トグル等) が一切届かない。
+   *
+   * `DOM.documentUpdated` は既存 nodeId を全て無効化するため、その都度この
+   * 関数を呼び直して追跡を張り直す必要がある。
+   */
+  async function trackDocument(): Promise<void> {
+    if (unsubscribed) return;
+    try {
+      await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    } catch {
+      // ブラウザが閉じられた / セッションが死んだ等は握りつぶす
+    }
+  }
+
+  await trackDocument();
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pendingCause: AXUpdateCause | null = null;
   let extractInFlight: Promise<void> | null = null;
-  let unsubscribed = false;
 
   async function runExtract(cause: AXUpdateCause): Promise<void> {
     if (unsubscribed) return;
@@ -73,9 +144,11 @@ export async function subscribeAXTreeUpdates(
     }
   }
 
-  function schedule(cause: AXUpdateCause): void {
+  function schedule(cause: AXUpdateCause, delayMs: number): void {
     if (unsubscribed) return;
-    pendingCause = cause;
+    if (pendingCause === null || CAUSE_PRIORITY[cause] > CAUSE_PRIORITY[pendingCause]) {
+      pendingCause = cause;
+    }
     if (timer !== null) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
@@ -89,25 +162,38 @@ export async function subscribeAXTreeUpdates(
           extractInFlight = null;
         });
       }
-    }, debounceMs);
+    }, delayMs);
   }
 
-  const onDocumentUpdated = (): void => schedule("document");
+  const onDocumentUpdated = (): void => {
+    // documentUpdated は既存 nodeId を全て無効化する。再追跡しないと、
+    // 新しいドキュメント上での childNode/attribute 変更を取りこぼす。
+    void trackDocument();
+    schedule("document", debounceMs);
+  };
   const onFrameNavigated = (params: unknown): void => {
     const { frame } = params as FrameNavigatedParams;
     // メインフレーム (parentId なし) のみ追従。iframe の遷移は無視する。
     if (!frame || frame.parentId) return;
-    schedule("navigation");
+    // ナビゲーション直後も documentUpdated と同じく追跡を張り直す。
+    void trackDocument();
+    schedule("navigation", debounceMs);
   };
   const onLifecycleEvent = (params: unknown): void => {
     const { name } = params as LifecycleEventParams;
     if (name !== "load" && name !== "networkIdle") return;
-    schedule("lifecycle");
+    schedule("lifecycle", debounceMs);
   };
+  const onMutation = (): void => schedule("mutation", mutationDebounceMs);
 
   cdp.on("DOM.documentUpdated", onDocumentUpdated);
   cdp.on("Page.frameNavigated", onFrameNavigated);
   cdp.on("Page.lifecycleEvent", onLifecycleEvent);
+  if (subscribeMutations) {
+    cdp.on("DOM.childNodeInserted", onMutation);
+    cdp.on("DOM.childNodeRemoved", onMutation);
+    cdp.on("DOM.attributeModified", onMutation);
+  }
 
   return {
     async unsubscribe(): Promise<void> {
@@ -120,6 +206,11 @@ export async function subscribeAXTreeUpdates(
       cdp.off("DOM.documentUpdated", onDocumentUpdated);
       cdp.off("Page.frameNavigated", onFrameNavigated);
       cdp.off("Page.lifecycleEvent", onLifecycleEvent);
+      if (subscribeMutations) {
+        cdp.off("DOM.childNodeInserted", onMutation);
+        cdp.off("DOM.childNodeRemoved", onMutation);
+        cdp.off("DOM.attributeModified", onMutation);
+      }
       // DOM/Page ドメインは他のコンポーネント (例: headed モードの Overlay) が
       // 使っている可能性があるため disable は発行しない。
     },
