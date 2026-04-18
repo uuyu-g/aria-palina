@@ -201,43 +201,94 @@ function findEffectiveParentName(node: RawAXNode, byId: ReadonlyMap<string, RawA
 }
 
 /**
+ * 名前を持たない wrapper ロール (listitem / menuitem / treeitem / cell /
+ * gridcell) が、フラット配列上で唯一の子を持つときに、その子のロール表記と
+ * 名前・状態を親行へ吸収し、子ノードを除去する。
+ *
+ * 典型ケースは `<li><a>Home</a></li>` や `<td><button>削除</button></td>` の
+ * ような、ラッパーが 1 つのインタラクティブ要素だけを包む深いネスト。
+ * スクリーンリーダーは「list item, link, Home」のように連続読み上げする
+ * ため、表示上も `[listitem] [link] Home` の 1 行に集約する方が可読性が高い。
+ *
+ * フォーカス可能性 (`isFocusable`) と状態 (`state`) は親へ伝播するため、
+ * Tab モードでの到達性・disabled 表示などは保持される。
+ */
+const COMPOUND_WRAPPER_ROLES = new Set(["listitem", "menuitem", "treeitem", "cell", "gridcell"]);
+
+/**
  * 名前を持たない親ノードの唯一の子が StaticText である場合、テキストを
- * 親に吸収して StaticText 行を除去する。
+ * 親に吸収して StaticText 行を除去する。また、親が `COMPOUND_WRAPPER_ROLES`
+ * のいずれかである場合は、StaticText 以外の子ロールも `[parent] [child]`
+ * 形式へ統合して 1 行に圧縮する。
  *
  * 例:
  *   `[paragraph]` + `[StaticText] JavaScript`
- *   → `[paragraph] JavaScript` (1 行に統合)
+ *   → `[paragraph] JavaScript` (テキスト吸収)
+ *
+ *   `[listitem]` + `[link] Home`
+ *   → `[listitem] [link] Home` (compound 吸収)
  *
  * 判定条件 (flat 配列上):
  * 1. ノード A: `name` が空
- * 2. 直後のノード B: `role === "StaticText"` かつ `depth === A.depth + 1`
+ * 2. 直後のノード B: `depth === A.depth + 1`
  * 3. B の次 (存在すれば): `depth <= A.depth` (= A の他の子がない)
  *
  * 配列をインプレースで変異させる (splice)。
  */
-function absorbLoneStaticText(nodes: A11yNode[]): void {
+function absorbLoneChild(nodes: A11yNode[]): void {
   let i = 0;
   while (i < nodes.length - 1) {
     const parent = nodes[i]!;
     const child = nodes[i + 1]!;
 
-    if (parent.name === "" && child.role === "StaticText" && child.depth === parent.depth + 1) {
-      // 次のノード (child の後) が存在しないか、depth が parent 以下なら唯一の子
-      const next = nodes[i + 2];
-      if (!next || next.depth <= parent.depth) {
-        // 吸収: 親の name と speechText を更新し、StaticText を除去
-        parent.name = child.name;
-        parent.speechText = buildSpeechText({
-          role: parent.role,
-          name: parent.name,
-          properties: parent.properties,
-          state: parent.state as Record<string, boolean | string>,
-        });
-        nodes.splice(i + 1, 1);
-        // i は進めない (統合後の parent を再評価する必要はないが、次を見るため)
-        continue;
-      }
+    if (parent.name !== "" || child.depth !== parent.depth + 1) {
+      i++;
+      continue;
     }
+
+    // 次のノード (child の後) が存在しないか、depth が parent 以下なら唯一の子
+    const next = nodes[i + 2];
+    if (next && next.depth > parent.depth) {
+      i++;
+      continue;
+    }
+
+    if (child.role === "StaticText") {
+      // テキスト吸収: 親の name と speechText を更新し、StaticText を除去
+      parent.name = child.name;
+      parent.speechText = buildSpeechText({
+        role: parent.role,
+        name: parent.name,
+        properties: parent.properties,
+        state: parent.state,
+      });
+      nodes.splice(i + 1, 1);
+      continue;
+    }
+
+    if (COMPOUND_WRAPPER_ROLES.has(parent.role)) {
+      // Compound 吸収: [parentRole] [childRole] name (states) を 1 行に生成する
+      const parentLabel = buildSpeechText({
+        role: parent.role,
+        name: "",
+        properties: parent.properties,
+        state: {},
+      });
+      const mergedState: Record<string, boolean | string> = { ...parent.state, ...child.state };
+      const childLine = buildSpeechText({
+        role: child.role,
+        name: child.name,
+        properties: child.properties,
+        state: mergedState,
+      });
+      parent.name = child.name;
+      parent.state = mergedState;
+      parent.isFocusable = parent.isFocusable || child.isFocusable;
+      parent.speechText = `${parentLabel} ${childLine}`;
+      nodes.splice(i + 1, 1);
+      continue;
+    }
+
     i++;
   }
 }
@@ -375,9 +426,9 @@ export function flattenAXTree(
   // テーブル系ノードに列位置・ヘッダー名・行列数を付与
   enrichTableContext(result);
 
-  // 名前なし親の唯一の StaticText 子を親に吸収して行数を削減する
+  // 名前なし親の唯一の子を親行へ吸収して深いネストを圧縮する
   if (shouldFilter) {
-    absorbLoneStaticText(result);
+    absorbLoneChild(result);
   }
 
   return result;
