@@ -3,6 +3,7 @@ import path from "node:path";
 import type { A11yNode, AXUpdateCause, AXUpdateSubscription, ICDPClient } from "@aria-palina/core";
 import {
   clearHighlight,
+  clickNode,
   delay,
   diffLiveRegions,
   disableOverlay,
@@ -106,6 +107,17 @@ export interface LiveBridge {
   refresh(): Promise<void>;
   toggleLive(): Promise<boolean>;
   isLiveEnabled(): boolean;
+}
+
+/**
+ * `Enter` / `Space` でカーソル下要素をクリック・トグルするためのブリッジ。
+ *
+ * App は `click(node)` を呼ぶだけで、CDP 呼び出しの具体 (座標取得・マウス
+ * イベント発行) は `runTui` 側が {@link clickNode} に委譲する。副作用で
+ * 発生した DOM 変化は既存の {@link LiveBridge} が自動で拾う。
+ */
+export interface ActionBridge {
+  click(node: A11yNode): Promise<void>;
 }
 
 async function defaultBrowserFactory(opts: BrowserFactoryOptions): Promise<BrowserHandle> {
@@ -368,11 +380,19 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
       }
     }
 
+    const actionBridge: ActionBridge = {
+      async click(node: A11yNode): Promise<void> {
+        await clickNode(adapter, node.backendNodeId);
+      },
+    };
+
     const element = createElement(App, {
       url: args.url,
       nodes: filteredNodes,
       liveBridge: live.bridge,
       highlightController,
+      actionBridge,
+      headless: !args.headed,
     });
 
     const instance = await renderer(element, {

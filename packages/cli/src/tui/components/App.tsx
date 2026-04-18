@@ -8,7 +8,7 @@ import {
 } from "@aria-palina/core";
 import { Box, Text, useApp, useInput, useStdout, type Key } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { LiveBridge, LiveUpdate } from "../run.js";
+import type { ActionBridge, LiveBridge, LiveUpdate } from "../run.js";
 import { useHighlight, type HighlightController } from "../use-highlight.js";
 import { FilterModal } from "./FilterModal.js";
 import { VirtualList } from "./VirtualList.js";
@@ -32,6 +32,17 @@ export interface AppProps {
    * 表示のみとなり、`r` / `L` キーは無効になる。
    */
   liveBridge?: LiveBridge | null;
+  /**
+   * `Enter` / `Space` でカーソル下の要素をクリック・トグルするためのブリッジ。
+   * 未指定時は両キー共に no-op となる。
+   */
+  actionBridge?: ActionBridge | null;
+  /**
+   * ブラウザがヘッドレス (`--headed` 未指定) で起動しているか。
+   * `true` のとき、初回の操作で「操作結果は --headed で視認可能」という
+   * 警告を 1 度だけフッターに表示する。
+   */
+  headless?: boolean;
 }
 
 const HEADER_LINES = 1;
@@ -49,10 +60,24 @@ const KIND_LABEL: Readonly<Record<NodeKind, string>> = {
 };
 
 const FOOTER_NORMAL =
-  "↑/↓ 移動 Tab フォーカス h 見出し d ランドマーク g/G 先頭末尾 r 再取得 L ライブ q 終了";
+  "↑/↓ 移動 Tab フォーカス h 見出し d ランドマーク Enter クリック Space トグル g/G 先頭末尾 r 再取得 L ライブ q 終了";
 
 /** live 通知の自動消滅までの ms。 */
 const LIVE_STATUS_TTL = 4_000;
+
+/** `Enter` でクリック扱いにするロール。NVDA のデフォルト挙動に揃える。 */
+const ENTER_ROLES: ReadonlySet<string> = new Set([
+  "button",
+  "link",
+  "menuitem",
+  "menuitemcheckbox",
+  "menuitemradio",
+  "tab",
+  "option",
+]);
+
+/** `Space` でトグル扱いにするロール。 */
+const SPACE_ROLES: ReadonlySet<string> = new Set(["checkbox", "radio", "switch", "button"]);
 
 /**
  * `from` の位置から最寄りの `kind` 一致ノードを探す。
@@ -77,6 +102,8 @@ export function App({
   highlightController = null,
   highlightDebounceMs,
   liveBridge = null,
+  actionBridge = null,
+  headless = false,
 }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -87,6 +114,7 @@ export function App({
     liveBridge ? liveBridge.isLiveEnabled() : false,
   );
   const [liveStatus, setLiveStatus] = useState<string | null>(null);
+  const headlessWarnedRef = useRef(false);
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
 
@@ -251,6 +279,35 @@ export function App({
       }
       return;
     }
+    if (key.return) {
+      triggerAction(ENTER_ROLES);
+      return;
+    }
+    if (input === " ") {
+      triggerAction(SPACE_ROLES);
+      return;
+    }
+  }
+
+  function triggerAction(allowedRoles: ReadonlySet<string>): void {
+    if (!actionBridge) return;
+    const node = nodes[cursor];
+    if (!node) return;
+    if (!allowedRoles.has(node.role)) return;
+    if (node.backendNodeId === 0) return;
+    // 初回のヘッドレス操作だけは「視認できない」旨の警告を出し、通常の
+    // クリックフィードバックを上書きする。後続の操作では普通に
+    // `✱ クリック: <label>` を表示する。
+    if (headless && !headlessWarnedRef.current) {
+      headlessWarnedRef.current = true;
+      setLiveStatus("[headless] 操作結果は --headed で視認可能");
+    } else {
+      const label = node.name && node.name.length > 0 ? node.name : node.role;
+      setLiveStatus(`✱ クリック: ${label}`);
+    }
+    // CDP への送信はバックグラウンドで fire-and-forget。失敗しても TUI を
+    // 壊さないよう握りつぶし、後続の live 更新に任せてカーソルを復元する。
+    void actionBridge.click(node).catch(() => {});
   }
 
   function handleModalMode(input: string, key: Key, kind: NodeKind) {
