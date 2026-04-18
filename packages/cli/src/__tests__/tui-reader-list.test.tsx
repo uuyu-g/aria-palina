@@ -67,10 +67,39 @@ describe("toReaderRows", () => {
     expect(nodeIndexToRow.get(4)).toBe(4);
   });
 
-  test("ReaderItem.depth はランドマーク基準で再採番される", () => {
+  test("ノード行の indent はランドマーク段数 +1 + セクション内 depth の合算になる", () => {
     const { rows } = toReaderRows(sectionedNodes());
     const paragraph = rows.find((r) => r.kind === "node" && r.node.name === "本文");
-    expect(paragraph?.kind === "node" && paragraph.depth).toBe(1);
+    // main (depth=0) の配下で item.depth=1 → indent = 0+1+1 = 2
+    expect(paragraph?.kind === "node" && paragraph.indent).toBe(2);
+  });
+
+  test("ネストしたランドマーク行の indent は入れ子段数を反映する", () => {
+    // banner > navigation > link
+    const nested: A11yNode[] = [
+      node({ backendNodeId: 1, role: "banner", depth: 0, speechText: "[banner]" }),
+      node({
+        backendNodeId: 2,
+        role: "navigation",
+        depth: 1,
+        name: "グローバル",
+        speechText: "[navigation] グローバル",
+      }),
+      node({
+        backendNodeId: 3,
+        role: "link",
+        depth: 2,
+        name: "概要",
+        speechText: "[link] 概要",
+      }),
+    ];
+    const { rows } = toReaderRows(nested);
+    const bannerSep = rows[0];
+    const navSep = rows[1];
+    const link = rows[2];
+    expect(bannerSep?.kind === "separator" && bannerSep.indent).toBe(0);
+    expect(navSep?.kind === "separator" && navSep.indent).toBe(1);
+    expect(link?.kind === "node" && link.indent).toBe(2);
   });
 });
 
@@ -125,6 +154,46 @@ describe("ReaderList", () => {
     const { lastFrame, unmount } = render(<ReaderList nodes={[]} cursor={0} viewport={5} />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("表示するノードがありません");
+    unmount();
+  });
+
+  test("ネストしたランドマークは罫線もアイテムも段階的にインデントされる", () => {
+    const nested: A11yNode[] = [
+      node({ backendNodeId: 1, role: "banner", depth: 0, speechText: "[banner]" }),
+      node({
+        backendNodeId: 2,
+        role: "link",
+        depth: 1,
+        name: "ホーム",
+        speechText: "[link] ホーム",
+      }),
+      node({
+        backendNodeId: 3,
+        role: "navigation",
+        depth: 1,
+        name: "グローバル",
+        speechText: "[navigation] グローバル",
+      }),
+      node({
+        backendNodeId: 4,
+        role: "link",
+        depth: 2,
+        name: "概要",
+        speechText: "[link] 概要",
+      }),
+    ];
+    // cursor はランドマーク (items に含まれない) を指すため、ノード行に選択強調は付かない
+    const { lastFrame, unmount } = render(<ReaderList nodes={nested} cursor={0} viewport={20} />);
+    const frame = lastFrame() ?? "";
+    const lines = frame.split("\n");
+    // banner 罫線 (indent=0)
+    expect(lines[0]).toBe("── banner ──");
+    // ホーム = NodeRow プレフィクス "  " + indent 1 段 ("  ") + speechText
+    expect(lines[1]).toBe("    [link] ホーム");
+    // navigation 罫線 (indent=1) → 2 スペース + 罫線
+    expect(lines[2]).toBe("  ── navigation「グローバル」 ──");
+    // 概要 = NodeRow プレフィクス "  " + indent 2 段 ("    ") + speechText
+    expect(lines[3]).toBe("      [link] 概要");
     unmount();
   });
 

@@ -41,11 +41,17 @@
 - **中間表現を Core に置く**: Chrome Extension (Phase 7) でも同一のビュー
   ロジックを再利用することを前提に、`buildReaderView` は純粋関数として Core
   に置いた。Ink/React/DOM など環境固有の依存を持ち込んでいない。
-- **セクションはフラット**: ネストしたランドマーク (`<main><nav>...</nav></main>`)
-  は隣接セクションとして扱う。nav を抜けて外側の main 内容が再出現した場合は、
-  外側へ戻る検出 (`node.depth <= landmark.depth`) をトリガに、無名セクション
-  (`landmark: null`) を開いて残りを積む。実サイトでの入れ子は稀で、スタック
-  追跡より単純化優先。
+- **ランドマーク入れ子はスタックで保持**: `<banner><nav>...</nav></banner>`
+  のようにランドマークがネストしている場合、`ReaderSection.depth` (入れ子段数)
+  として保持する。`buildReaderView` は開いているランドマークをスタックで追跡し、
+  新しいランドマーク出現時に「同じ or 浅い depth のランドマークだけ閉じる」
+  ルールで親子関係を判定する。`banner` 内の `nav` を抜けて `banner` 直下に
+  戻った場合、`nav` セクションを閉じつつ `banner` セクションへ残りのアイテムを
+  追加し続ける。
+- **レンダラーは `depth` をインデントに反映**: CLI / TUI のレンダラーは
+  `section.depth * 2` を罫線行のインデントに、`(section.depth + 1 + item.depth)
+  * 2` をアイテム行のインデントに使い、晴眼者が入れ子構造を視覚的に追えるよう
+  にする。
 - **Cursor は A11yNode インデックス**: TUI の cursor 管理は既存の VirtualList と
   同じく `A11yNode[]` 上のインデックスに統一。separator 行は cursor 対象外で、
   `toReaderRows` が返す `nodeIndexToRow` で row インデックスへ変換して windowing
@@ -73,15 +79,18 @@
 
 **`@aria-palina/core`**:
 
-- `src/__tests__/reader-view.test.ts` — 10 テスト。
+- `src/__tests__/reader-view.test.ts` — 13 テスト。
   - ランドマーク未出現時の暗黙セクション
-  - 複数ランドマーク分割
-  - depth 再採番
+  - 兄弟ランドマーク (全て depth=0)
+  - ネストしたランドマーク (section.depth で親子関係を保持)
+  - ネスト配下 item の depth 再採番 (最も内側のランドマーク基準)
+  - ネストから外側へ戻ったときの内側セクション自動クローズ
+  - 全ランドマークを抜けた後の暗黙後置きセクション
   - `none` / `presentation` の除外
   - name 付き/空白ラベルの扱い
-  - ネストしたランドマーク (無名セクションへのフォールバック)
   - 空配列・アイテム 0 件セクション
   - `ReaderItem.node` の参照 identity 保持
+  - 暗黙セクション内での後続浅い depth の再シフト
 
 **`@aria-palina/cli`**:
 
@@ -108,7 +117,7 @@
 export {
   buildReaderView,
   type ReaderItem,
-  type ReaderSection,
+  type ReaderSection, // `depth` フィールドでランドマーク入れ子段数を表現
 } from "./reader-view.js";
 ```
 

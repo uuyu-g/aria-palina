@@ -4,24 +4,28 @@
  * `flattenAXTree` が返す素朴な平坦配列を、晴眼者にとって俯瞰しやすい
  * 「目次的なページ構造」へ再構成する純粋関数を提供する。
  *
- * アルゴリズム (docs/plan.md Phase 6.5):
+ * アルゴリズム:
  *
  * 1. ランドマーク (banner / navigation / main / complementary /
  *    contentinfo / region / search / form) を境界として配列を
  *    {@link ReaderSection} に区切る。
- * 2. 各セクションは内部にアイテム列を持ち、先頭ランドマークの
- *    `depth` を基準にアイテムの `depth` を相対化する。
- * 3. スクリーンリーダーが読み飛ばすだけの意味を持たないロール
+ * 2. ランドマークがネストしている場合 (`<banner><nav>...</nav></banner>`)
+ *    は、スタックで親子関係を追跡し、子セクションに
+ *    `ReaderSection.depth` (ネスト段数) を付与する。外側のランドマークから
+ *    抜けた時点で内側セクションは閉じられる。
+ * 3. 各セクションは内部にアイテム列を持ち、先頭ランドマークの
+ *    `depth` を基準にアイテムの `ReaderItem.depth` を相対化する。
+ * 4. スクリーンリーダーが読み飛ばすだけの意味を持たないロール
  *    (`none` / `presentation`) はアイテムから除外する。
  *    `generic` (名前なし) は `flattenAXTree` が既に潰しているため
  *    重複して処理しない。
- * 4. 最初のランドマーク以前に現れたノードは、暗黙の前置きセクション
- *    (`landmark: null`) に積む。
+ * 5. 最初のランドマーク以前や、全ランドマークを抜けた後に現れたノードは、
+ *    暗黙の前置き・後置きセクション (`landmark: null`) に積む。
  *
- * ネストしたランドマーク (`<main><nav>...</nav></main>`) は「新しいランドマーク
- * が出現したら前のセクションを閉じる」というフラットなルールで扱う。ネスト
- * ランドマーク後に外側の `main` の内容が再出現した場合は新しい無名セクションに
- * 積む。実サイトでのネストは稀であり、単純化優先。
+ * 返される `ReaderSection[]` は出力順のフラット配列。ランドマークの入れ子
+ * 関係は `section.depth` (0 = トップレベル、1 = 親ランドマーク直下) と
+ * 出現順から復元できる。レンダラー (CLI `formatReaderTextOutput` /
+ * TUI `ReaderList`) はこの `depth` を罫線とアイテムのインデントに反映する。
  *
  * CLI / TUI のどちらのレンダラーからも使われ、将来の Chrome Extension でも
  * 同じロジックを共有できるように Core に置く。
@@ -36,6 +40,7 @@ export interface ReaderItem {
   /**
    * セクション内の相対 depth。
    * ランドマーク直下のアイテムは 0 から始まり、入れ子の深さを表す。
+   * セクション自身の {@link ReaderSection.depth} とは別系統である点に注意。
    */
   depth: number;
 }
@@ -50,9 +55,16 @@ export interface ReaderSection {
   /**
    * セクションヘッダに表示するラベル。
    * ランドマーク有: `main` / `navigation「サイドバー」` のように role (+ name) を返す。
-   * ランドマーク無 (先頭前置き): 空文字列。
+   * ランドマーク無 (暗黙セクション): 空文字列。
    */
   label: string;
+  /**
+   * セクションのネスト段数。
+   * - `0` — トップレベル (どのランドマークにも包まれていない) / 暗黙セクション。
+   * - `1` — 別のランドマーク直下に現れた入れ子ランドマーク。
+   *   例: `<banner><nav>...</nav></banner>` の `nav` は depth=1。
+   */
+  depth: number;
   /** このセクションに属するアイテム列 (DFS 順)。 */
   items: ReaderItem[];
 }
@@ -89,67 +101,99 @@ function formatSectionLabel(landmark: A11yNode): string {
   return `${landmark.role}「${name}」`;
 }
 
+/**
+ * 作業中セクションの内部表現。`landmark !== null` のセクションは
+ * `openStack` に積まれ、後からアイテムが追加される。
+ */
 interface WorkingSection {
-  landmark: A11yNode | null;
-  items: A11yNode[];
-  minDepth: number;
-}
-
-function finalizeSection(work: WorkingSection): ReaderSection {
-  const base = work.minDepth === Number.POSITIVE_INFINITY ? 0 : work.minDepth;
-  const items: ReaderItem[] = work.items.map((node) => ({
-    node,
-    depth: Math.max(0, node.depth - base),
-  }));
-  return {
-    landmark: work.landmark,
-    label: work.landmark ? formatSectionLabel(work.landmark) : "",
-    items,
-  };
+  section: ReaderSection;
+  /**
+   * セクション内アイテムの depth 再採番の基準となる元 `A11yNode.depth`。
+   * ランドマーク有のセクションでは `landmark.depth + 1` (直下の最小 depth)。
+   * 暗黙セクションでは動的に最小 depth を追跡する。
+   */
+  baseDepth: number;
 }
 
 /**
  * `A11yNode[]` (DFS 平坦化済み) から {@link ReaderSection} の配列を構築する。
  *
- * 空の暗黙セクション (landmark: null, items: []) は出力に含めない。
- * ランドマークだけが存在しアイテムが 0 件のセクションは、見出しだけの
- * 空ランドマーク (ex: `<main></main>`) をそのまま反映するため残す。
+ * ランドマークが入れ子になっている場合、セクションは外側→内側の順にフラット
+ * 配列へ並び、`depth` フィールドが入れ子段数を表す。外側のランドマークから
+ * 抜けた (= `node.depth <= outerLandmark.depth` が発生した) 時点で、より
+ * 内側の開いていたセクションは全て閉じる。
  */
 export function buildReaderView(nodes: readonly A11yNode[]): ReaderSection[] {
   const sections: ReaderSection[] = [];
-  let current: WorkingSection = {
-    landmark: null,
-    items: [],
-    minDepth: Number.POSITIVE_INFINITY,
-  };
+  /** 開いているランドマークセクションのスタック (親 → 子の順)。 */
+  const openStack: WorkingSection[] = [];
+  /**
+   * 現在受け付け中の暗黙セクション。ランドマークの開始や閉じで `null` に
+   * リセットし、次にランドマーク外のノードが来たときに新規作成する。
+   */
+  let currentPreamble: WorkingSection | null = null;
 
-  const closeCurrent = (): void => {
-    if (current.landmark !== null || current.items.length > 0) {
-      sections.push(finalizeSection(current));
+  /** スタック最上位のランドマーク深さ以下にノードが降りたら、そのセクションを閉じる。 */
+  const closeExitedSections = (nodeDepth: number): void => {
+    while (openStack.length > 0) {
+      const top = openStack[openStack.length - 1];
+      if (!top || !top.section.landmark) break;
+      if (top.section.landmark.depth < nodeDepth) break;
+      openStack.pop();
     }
   };
 
   for (const node of nodes) {
     if (LANDMARK_ROLES.has(node.role)) {
-      closeCurrent();
-      current = { landmark: node, items: [], minDepth: Number.POSITIVE_INFINITY };
+      // 親ランドマークから抜けた子は閉じる。depth >= node.depth のものはすべて兄弟以上。
+      closeExitedSections(node.depth);
+      currentPreamble = null;
+
+      const section: ReaderSection = {
+        landmark: node,
+        label: formatSectionLabel(node),
+        depth: openStack.length, // スタックの残量 = ネスト段数
+        items: [],
+      };
+      sections.push(section);
+      openStack.push({ section, baseDepth: node.depth + 1 });
       continue;
     }
     if (SKIP_ROLES.has(node.role)) continue;
 
-    // ネストしたランドマークを抜けて外側の内容に戻った場合、現在の
-    // ランドマークセクションを閉じ、暗黙の無名セクションへ積む。
-    // 判定: 現在のランドマークの depth 以下に戻ったノードは、そのランドマークの
-    //       子孫ではない (DFS 平坦化の不変条件より)。
-    if (current.landmark !== null && node.depth <= current.landmark.depth) {
-      closeCurrent();
-      current = { landmark: null, items: [], minDepth: Number.POSITIVE_INFINITY };
+    // 外側ランドマークから抜けた場合 (nav の外に出て banner には戻らない等)
+    closeExitedSections(node.depth);
+
+    if (openStack.length === 0) {
+      // 暗黙セクションに積む。直前に開いていたセクションを抜けた直後なら
+      // 新しい暗黙セクションを作り、そうでなければ既存の preamble に追記する。
+      if (currentPreamble === null) {
+        currentPreamble = {
+          section: { landmark: null, label: "", depth: 0, items: [] },
+          baseDepth: node.depth, // 最初のアイテムの depth を 0 として採番
+        };
+        sections.push(currentPreamble.section);
+      }
+      // 暗黙セクション内では最小 depth を基準に再採番する
+      if (node.depth < currentPreamble.baseDepth) {
+        // 先に積んだアイテムの相対 depth をシフトし直す
+        const shift = currentPreamble.baseDepth - node.depth;
+        for (const item of currentPreamble.section.items) item.depth += shift;
+        currentPreamble.baseDepth = node.depth;
+      }
+      currentPreamble.section.items.push({
+        node,
+        depth: node.depth - currentPreamble.baseDepth,
+      });
+      continue;
     }
 
-    current.items.push(node);
-    if (node.depth < current.minDepth) current.minDepth = node.depth;
+    // ランドマーク配下のアイテム: 最上位 (= 最も内側) のセクションに積む
+    const top = openStack[openStack.length - 1]!;
+    currentPreamble = null;
+    const rel = node.depth - top.baseDepth;
+    top.section.items.push({ node, depth: rel < 0 ? 0 : rel });
   }
 
-  closeCurrent();
   return sections;
 }

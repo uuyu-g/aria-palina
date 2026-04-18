@@ -149,12 +149,76 @@ describe("formatReaderTextOutput", () => {
     expect(lines[4]).toBe("[paragraph] 本文");
   });
 
-  test("セクション内 depth がランドマーク基準で再採番される", () => {
+  test("indent:true のときトップレベルランドマーク配下のアイテムは 2 スペースインデントされる", () => {
     const result = formatReaderTextOutput(sectionedNodes(), { indent: true, color: false });
     const lines = result.split("\n");
-    expect(lines[1]).toBe("[heading1] ロゴ");
-    expect(lines[3]).toBe("[heading2] 記事");
-    expect(lines[4]).toBe("  [paragraph] 本文");
+    // 罫線自身はインデント 0 (section.depth=0)
+    expect(lines[0]).toBe("── banner ──");
+    // ランドマーク直下アイテム = itemBaseIndent(1) + item.depth(0) = 1 → 2 スペース
+    expect(lines[1]).toBe("  [heading1] ロゴ");
+    expect(lines[2]).toBe("── main ──");
+    expect(lines[3]).toBe("  [heading2] 記事");
+    // paragraph は item.depth=1 → 4 スペース
+    expect(lines[4]).toBe("    [paragraph] 本文");
+  });
+
+  test("ネストしたランドマークは罫線と配下アイテムが段階的にインデントされる", () => {
+    // <banner depth=0><a>ホーム</a><nav depth=1 aria-label="グローバル"><a>概要</a></nav></banner>
+    const nodes: A11yNode[] = [
+      {
+        backendNodeId: 1,
+        role: "banner",
+        name: "",
+        depth: 0,
+        properties: {},
+        state: {},
+        speechText: "[banner]",
+        isFocusable: false,
+        isIgnored: false,
+      },
+      {
+        backendNodeId: 2,
+        role: "link",
+        name: "ホーム",
+        depth: 1,
+        properties: {},
+        state: {},
+        speechText: "[link] ホーム",
+        isFocusable: true,
+        isIgnored: false,
+      },
+      {
+        backendNodeId: 3,
+        role: "navigation",
+        name: "グローバル",
+        depth: 1,
+        properties: {},
+        state: {},
+        speechText: "[navigation] グローバル",
+        isFocusable: false,
+        isIgnored: false,
+      },
+      {
+        backendNodeId: 4,
+        role: "link",
+        name: "概要",
+        depth: 2,
+        properties: {},
+        state: {},
+        speechText: "[link] 概要",
+        isFocusable: true,
+        isIgnored: false,
+      },
+    ];
+    const result = formatReaderTextOutput(nodes, { indent: true, color: false });
+    expect(result).toBe(
+      [
+        "── banner ──",
+        "  [link] ホーム",
+        "  ── navigation「グローバル」 ──",
+        "    [link] 概要",
+      ].join("\n"),
+    );
   });
 
   test("ランドマークに name があるとラベルに鉤括弧付きで表示される", () => {

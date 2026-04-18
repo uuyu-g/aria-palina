@@ -52,6 +52,7 @@ export function ReaderList({ nodes, cursor, viewport }: ReaderListProps) {
         const globalRow = start + i;
         if (row.kind === "separator") {
           const style = roleTextStyle(row.role);
+          const prefix = "  ".repeat(row.indent);
           return (
             <Text
               key={`sep-${globalRow}`}
@@ -59,14 +60,14 @@ export function ReaderList({ nodes, cursor, viewport }: ReaderListProps) {
               bold={style.bold}
               wrap="truncate-end"
             >
-              {`${SEPARATOR_DASHES} ${row.label} ${SEPARATOR_DASHES}`}
+              {`${prefix}${SEPARATOR_DASHES} ${row.label} ${SEPARATOR_DASHES}`}
             </Text>
           );
         }
         const selected = row.nodeIndex === cursor;
-        // NodeRow は `node.depth` をインデントに使うため、rebased depth を
+        // NodeRow は `node.depth` をインデントに使うため、合算済みの indent を
         // 上書きした浅いコピーを渡して reader view 上の階層を表示する。
-        const displayNode: A11yNode = { ...row.node, depth: row.depth };
+        const displayNode: A11yNode = { ...row.node, depth: row.indent };
         return (
           <NodeRow
             key={`${row.node.backendNodeId}-${row.nodeIndex}`}
