@@ -35,3 +35,4 @@ export {
   type RGBA,
 } from "./highlight.js";
 export { clickNode, focusNode } from "./actions.js";
+export { buildReaderView, type ReaderItem, type ReaderSection } from "./reader-view.js";

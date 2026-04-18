@@ -315,4 +315,89 @@ describe("runCli", () => {
       userDataDir: "/tmp/palina-test",
     });
   });
+
+  test("text 出力の既定は reader ビューでランドマーク罫線が挿入される", async () => {
+    const stdout = createWritableBuffer();
+    const stderr = createWritableBuffer();
+    const landmarkNodes = [
+      {
+        nodeId: "1",
+        ignored: false,
+        role: { type: "role", value: "main" },
+        name: { type: "computedString", value: "記事" },
+        childIds: ["2"],
+      },
+      {
+        nodeId: "2",
+        ignored: false,
+        parentId: "1",
+        role: { type: "role", value: "heading" },
+        name: { type: "computedString", value: "タイトル" },
+        properties: [{ name: "level", value: { type: "integer", value: 1 } }],
+      },
+    ];
+    const factory: BrowserFactory = async () => ({
+      async newCDPSessionForUrl(): Promise<MinimalCDPSession> {
+        return {
+          async send() {
+            return { nodes: landmarkNodes };
+          },
+          on() {},
+          off() {},
+        };
+      },
+      async close() {},
+    });
+
+    const code = await runCli(
+      ["https://example.com", "--no-indent", "--no-color", "--wait", "none"],
+      {
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        isTTY: false,
+        browserFactory: factory,
+      },
+    );
+
+    expect(code).toBe(0);
+    expect(stdout.value).toContain("── main「記事」 ──");
+    expect(stdout.value).toContain("タイトル");
+  });
+
+  test("--view raw では罫線を挟まず生ツリーの順で出力する", async () => {
+    const stdout = createWritableBuffer();
+    const stderr = createWritableBuffer();
+    const { factory } = fakeBrowserFactory();
+
+    const code = await runCli(
+      ["https://example.com", "--view", "raw", "--no-indent", "--no-color", "--wait", "none"],
+      {
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        isTTY: false,
+        browserFactory: factory,
+      },
+    );
+
+    expect(code).toBe(0);
+    expect(stdout.value).not.toContain("──");
+    expect(stdout.value).toContain("タイトル");
+    expect(stdout.value).toContain("送信");
+  });
+
+  test("不正な --view 値は exitCode:2 とエラーメッセージを返す", async () => {
+    const stdout = createWritableBuffer();
+    const stderr = createWritableBuffer();
+    const { factory } = fakeBrowserFactory();
+
+    const code = await runCli(["https://example.com", "--view", "invalid", "--wait", "none"], {
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      isTTY: false,
+      browserFactory: factory,
+    });
+
+    expect(code).toBe(2);
+    expect(stderr.value).toContain("invalid");
+  });
 });
