@@ -64,7 +64,10 @@ async function defaultBrowserFactory(opts: BrowserFactoryOptions): Promise<Brows
     const context = await chromium.launchPersistentContext(dir, { headless, viewport });
     return {
       async newCDPSessionForUrl(url: string): Promise<MinimalCDPSession> {
-        const page = await context.newPage();
+        // launchPersistentContext は起動時に空タブを 1 つ自動で開く。
+        // そのページを再利用し、見えない空タブが残らないようにする。
+        const existing = context.pages()[0];
+        const page = existing ?? (await context.newPage());
         await page.goto(url, { waitUntil: "domcontentloaded" });
         const session = await context.newCDPSession(page);
         return session as unknown as MinimalCDPSession;
