@@ -3,6 +3,8 @@ export {
   defaultTuiIO,
   type BrowserFactory,
   type BrowserHandle,
+  type LiveBridge,
+  type LiveUpdate,
   type TuiArgs,
   type TuiIO,
   type TuiRenderer,

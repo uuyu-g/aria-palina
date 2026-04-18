@@ -244,7 +244,31 @@ describe("runTui", () => {
     expect((scrollCall!.params as { backendNodeId: number }).backendNodeId).toBe(77);
   });
 
-  test("headless モードでは Overlay/DOM コマンドを一切発行せず controller も null", async () => {
+  test("headless かつ --no-live では Overlay/DOM コマンドを一切発行せず controller も null", async () => {
+    const stderr = createWritableBuffer();
+    const { factory, cdpCalls } = fakeBrowserFactory();
+    const captured: { element?: unknown } = {};
+    const nodes = makeNodes(2);
+
+    const code = await runTui(
+      { ...BASE_ARGS, live: false },
+      {
+        stderr: stderr.stream,
+        isTTY: true,
+        browserFactory: factory,
+        renderer: captureRenderer(captured),
+        extractor: async () => nodes,
+      },
+    );
+
+    expect(code).toBe(0);
+    expect(cdpCalls.some((m) => m.startsWith("Overlay."))).toBe(false);
+    expect(cdpCalls).not.toContain("DOM.enable");
+    const element = captured.element as { props: { highlightController: unknown } };
+    expect(element.props.highlightController).toBe(null);
+  });
+
+  test("headless + live (既定) では DOM.enable / Page.enable が発行されるが Overlay は触らない", async () => {
     const stderr = createWritableBuffer();
     const { factory, cdpCalls } = fakeBrowserFactory();
     const captured: { element?: unknown } = {};
@@ -259,8 +283,9 @@ describe("runTui", () => {
     });
 
     expect(code).toBe(0);
+    expect(cdpCalls).toContain("DOM.enable");
+    expect(cdpCalls).toContain("Page.enable");
     expect(cdpCalls.some((m) => m.startsWith("Overlay."))).toBe(false);
-    expect(cdpCalls).not.toContain("DOM.enable");
     const element = captured.element as { props: { highlightController: unknown } };
     expect(element.props.highlightController).toBe(null);
   });

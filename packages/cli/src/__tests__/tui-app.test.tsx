@@ -557,4 +557,162 @@ describe("App highlight controller", () => {
     await waitFrames();
     expect(calls.some((c) => c.kind === "clear")).toBe(true);
   });
+
+  test("liveBridge.subscribe 経由の更新で nodes が差し替わる", async () => {
+    const first = makeNodes(3);
+    const second = makeNodes(5);
+    let listener: ((u: import("../tui/run.js").LiveUpdate) => void) | null = null;
+    const bridge: import("../tui/run.js").LiveBridge = {
+      getSnapshot: () => first,
+      subscribe: (l) => {
+        listener = l;
+        return () => {
+          listener = null;
+        };
+      },
+      refresh: async () => {},
+      toggleLive: async () => true,
+      isLiveEnabled: () => true,
+    };
+    const { lastFrame, unmount } = render(
+      <App url="https://x.com" nodes={first} viewportOverride={10} liveBridge={bridge} />,
+    );
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("1/3");
+
+    listener?.({ nodes: second, cause: "document", liveChanges: [] });
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("1/5");
+    unmount();
+  });
+
+  test("更新後も同じ backendNodeId にカーソルが追随する", async () => {
+    const first: A11yNode[] = makeMixedNodes();
+    // first の cursor を index=2 (backendNodeId=3) に移動させた状態で更新する
+    // 新しいリストでは順序が変わり、backendNodeId=3 は index=0 に来る。
+    const second: A11yNode[] = [
+      makeNode({ backendNodeId: 3, role: "button", name: "btn1", speechText: "[button] btn1" }),
+      makeNode({ backendNodeId: 99, role: "heading", name: "新規", speechText: "[heading] 新規" }),
+    ];
+    let listener: ((u: import("../tui/run.js").LiveUpdate) => void) | null = null;
+    const bridge: import("../tui/run.js").LiveBridge = {
+      getSnapshot: () => first,
+      subscribe: (l) => {
+        listener = l;
+        return () => {
+          listener = null;
+        };
+      },
+      refresh: async () => {},
+      toggleLive: async () => true,
+      isLiveEnabled: () => true,
+    };
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://x.com" nodes={first} viewportOverride={10} liveBridge={bridge} />,
+    );
+    await waitFrames();
+    stdin.write("\u001B[B"); // ↓
+    await waitFrames();
+    stdin.write("\u001B[B"); // ↓ cursor=2
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("3/7");
+
+    listener?.({ nodes: second, cause: "document", liveChanges: [] });
+    await waitFrames();
+    // backendNodeId=3 が index=0 に移動 → カーソルも 0 に追随 → 表示は 1/2
+    expect(lastFrame() ?? "").toContain("1/2");
+    unmount();
+  });
+
+  test("r キーで liveBridge.refresh が呼ばれる", async () => {
+    const nodes = makeNodes(2);
+    let refreshCount = 0;
+    const bridge: import("../tui/run.js").LiveBridge = {
+      getSnapshot: () => nodes,
+      subscribe: () => () => {},
+      refresh: async () => {
+        refreshCount++;
+      },
+      toggleLive: async () => true,
+      isLiveEnabled: () => true,
+    };
+    const { stdin, unmount } = render(
+      <App url="https://x.com" nodes={nodes} viewportOverride={10} liveBridge={bridge} />,
+    );
+    await waitFrames();
+    stdin.write("r");
+    await waitFrames();
+    expect(refreshCount).toBe(1);
+    unmount();
+  });
+
+  test("L キーで liveBridge.toggleLive が呼ばれライブ表示が切り替わる", async () => {
+    const nodes = makeNodes(2);
+    let enabled = true;
+    const bridge: import("../tui/run.js").LiveBridge = {
+      getSnapshot: () => nodes,
+      subscribe: () => () => {},
+      refresh: async () => {},
+      toggleLive: async () => {
+        enabled = !enabled;
+        return enabled;
+      },
+      isLiveEnabled: () => enabled,
+    };
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://x.com" nodes={nodes} viewportOverride={10} liveBridge={bridge} />,
+    );
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("[live]");
+
+    stdin.write("L");
+    await waitFrames();
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("[live:off]");
+    unmount();
+  });
+
+  test("assertive な live 変更はステータスバーに ! 付きで表示される", async () => {
+    const nodes = makeNodes(2);
+    let listener: ((u: import("../tui/run.js").LiveUpdate) => void) | null = null;
+    const bridge: import("../tui/run.js").LiveBridge = {
+      getSnapshot: () => nodes,
+      subscribe: (l) => {
+        listener = l;
+        return () => {
+          listener = null;
+        };
+      },
+      refresh: async () => {},
+      toggleLive: async () => true,
+      isLiveEnabled: () => true,
+    };
+    const { lastFrame, unmount } = render(
+      <App url="https://x.com" nodes={nodes} viewportOverride={10} liveBridge={bridge} />,
+    );
+    await waitFrames();
+    const alertNode = makeNode({
+      backendNodeId: 101,
+      role: "alert",
+      name: "エラー発生",
+      speechText: "[alert] エラー発生",
+    });
+    listener?.({
+      nodes,
+      cause: "document",
+      liveChanges: [
+        {
+          kind: "added",
+          node: alertNode,
+          politeness: "assertive",
+          after: "[alert] エラー発生",
+        },
+      ],
+    });
+    await waitFrames();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("!");
+    expect(frame).toContain("エラー発生");
+    unmount();
+  });
 });

@@ -40,6 +40,7 @@
 | ---- | ----------- |
 | テーブルコンテキスト付与 / ネスト圧縮 (Core) | [improvements](./progress/improvements.md) |
 | CLI/TUI パッケージ統合リファクタ | [cli-tui-merge](./progress/cli-tui-merge.md) |
+| 非同期画面更新への追従 (ライブ AX 更新 / aria-live 通知) | [async-update](./progress/async-update.md) |
 
 ## 次にやること (Pending フェーズ)
 

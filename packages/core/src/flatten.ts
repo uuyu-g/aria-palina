@@ -34,6 +34,12 @@ const STRUCTURAL_PROPERTY_KEYS = new Set([
   "multiselectable",
   "orientation",
   "autocomplete",
+  // aria-live 系: diffLiveRegions が NVDA 風のライブ領域通知を生成するために
+  // 参照する。明示的な aria-live="polite" を持つ role 未指定の要素を正しく
+  // 検出するために必要。
+  "live",
+  "atomic",
+  "relevant",
 ]);
 
 /**
