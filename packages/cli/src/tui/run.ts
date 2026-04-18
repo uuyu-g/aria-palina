@@ -5,6 +5,7 @@ import {
   enableOverlay,
   extractA11yTree,
   highlightNode,
+  scrollIntoView,
   waitForNetworkIdle,
 } from "@aria-palina/core";
 import { createElement } from "react";
@@ -124,6 +125,10 @@ function safeIgnore(p: Promise<unknown>): Promise<void> {
  * 失敗だけは `onFirstError` で通知する。ユーザーが「ハイライトされない」
  * 問題に気付けるようにするため、`runTui` の finally でまとめて stderr に
  * 書き出す。
+ *
+ * `highlight()` は overlay 描画と同時に `DOM.scrollIntoViewIfNeeded` も
+ * 並行発行し、対象要素がビューポート外にある場合はブラウザ側でもスクロール
+ * させて TUI カーソルと視覚的に揃える。
  */
 function createHighlightController(
   adapter: ICDPClient,
@@ -138,6 +143,7 @@ function createHighlightController(
   return {
     highlight(backendNodeId: number) {
       void highlightNode(adapter, backendNodeId).catch(onError);
+      void scrollIntoView(adapter, backendNodeId).catch(onError);
     },
     clear() {
       void clearHighlight(adapter).catch(onError);

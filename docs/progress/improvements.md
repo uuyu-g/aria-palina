@@ -77,3 +77,25 @@ TUI (Phase 4 以降) では、CLI とは異なる **2段階の情報密度** を
   を連結する。セルのテーブル位置情報を失わずに 1 行に集約できる。
 - StaticText 吸収は従来通りの挙動を維持。`name=""` 親 + 単独 StaticText 子 の
   既存テスト群はそのまま緑。
+
+## Headed モードでブラウザ側もカーソルに追従してスクロール
+
+Phase 6 で実装した「TUI カーソル → ブラウザ Overlay ハイライト」の同期において、
+ハイライト対象ノードがビューポート外にあるとユーザーにはハイライトが見えず
+同期が機能していないように見えるケースがあった。TUI 側で `j`/`k` を連打して
+画面下方のノードへ移動したときに、ブラウザ側が自動でスクロールしなかったため。
+
+解消策として `HighlightController.highlight()` の内部で
+`DOM.scrollIntoViewIfNeeded` を並行発行するようにした。
+
+- `packages/core/src/highlight.ts` に `scrollIntoView(cdp, backendNodeId)` を追加。
+  `backendNodeId === 0` は `highlightNode` と同じく no-op。
+  既に可視範囲にある要素は CDP 実装側が no-op として扱うため、毎フレーム呼び出しても
+  コストは小さい (別途アプリ側での debounce は `useHighlight` に既にある)。
+- `packages/cli/src/tui/run.ts` の `createHighlightController` で
+  `highlight()` 呼び出し時に `highlightNode` と `scrollIntoView` を両方
+  fire-and-forget 発行する。エラーは既存の `onFirstError` パイプラインに流して
+  TUI 描画は壊さない。
+- 核心の不変条件 (headless では Overlay / DOM 系コマンドを一切発行しない) は
+  維持。`highlightController = null` のパスは変わらないため headless テストは
+  そのまま緑。

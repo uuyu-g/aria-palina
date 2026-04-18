@@ -11,6 +11,7 @@ export {
   disableOverlay,
   enableOverlay,
   highlightNode,
+  scrollIntoView,
   type HighlightConfig,
   type RGBA,
 } from "./highlight.js";

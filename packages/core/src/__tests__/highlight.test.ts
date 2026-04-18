@@ -1,5 +1,11 @@
 import { describe, expect, test, vi } from "vite-plus/test";
-import { clearHighlight, disableOverlay, enableOverlay, highlightNode } from "../highlight.js";
+import {
+  clearHighlight,
+  disableOverlay,
+  enableOverlay,
+  highlightNode,
+  scrollIntoView,
+} from "../highlight.js";
 import type { ICDPClient } from "../cdp-client.js";
 
 interface SendCall {
@@ -88,5 +94,24 @@ describe("clearHighlight", () => {
     const { client, calls } = recordingClient();
     await clearHighlight(client);
     expect(calls).toEqual([{ method: "Overlay.hideHighlight", params: undefined }]);
+  });
+});
+
+describe("scrollIntoView", () => {
+  test("backendNodeId を付けて DOM.scrollIntoViewIfNeeded を送る", async () => {
+    const { client, calls } = recordingClient();
+    await scrollIntoView(client, 42);
+    expect(calls).toEqual([
+      {
+        method: "DOM.scrollIntoViewIfNeeded",
+        params: { backendNodeId: 42 },
+      },
+    ]);
+  });
+
+  test("backendNodeId が 0 の場合はコマンドを発行しない", async () => {
+    const { client, calls } = recordingClient();
+    await scrollIntoView(client, 0);
+    expect(calls).toEqual([]);
   });
 });
