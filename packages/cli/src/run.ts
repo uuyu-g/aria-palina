@@ -1,4 +1,10 @@
-import { extractA11yTree, waitForNetworkIdle } from "@aria-palina/core";
+import {
+  delay,
+  extractA11yTree,
+  waitForFunction,
+  waitForNetworkIdle,
+  waitForSelector,
+} from "@aria-palina/core";
 import type { CliArgs } from "./args.js";
 import { parseCliArgs } from "./args.js";
 import { formatJsonOutput, formatTextOutput } from "./formatter.js";
@@ -92,6 +98,15 @@ export async function runCli(argv: readonly string[], io?: Partial<RunIO>): Prom
         idleTime: args.idleTime,
         timeout: args.timeout,
       });
+    }
+    if (args.waitForSelector !== undefined) {
+      await waitForSelector(adapter, args.waitForSelector, { timeout: args.timeout });
+    }
+    if (args.waitForFunction !== undefined) {
+      await waitForFunction(adapter, args.waitForFunction, { timeout: args.timeout });
+    }
+    if (args.delay > 0) {
+      await delay(args.delay);
     }
 
     const nodes = await extractA11yTree(adapter);

@@ -142,7 +142,7 @@ export { computeWindow, type VirtualWindow, type VirtualWindowInput } from "./vi
 
 **依存関係**: `@aria-palina/core@workspace:*`, `ink@^5`, `react@^18`, `playwright-core@~1.56.0`
 **バイナリ**: `palina` → `./dist/bin.mjs`
-**キーバインド**: `↑`/`↓`/`j`/`k` (行移動), `PageUp`/`PageDown` (ページ移動), `g`/`G` (先頭/末尾), `Tab`/`Shift+Tab` (インタラクティブ), `h`/`H` (見出し), `D` (ランドマーク), `q`/`Ctrl+C` (終了)。
+**キーバインド**: `↑`/`↓`/`j`/`k` (行移動), `PageUp`/`PageDown` (ページ移動), `g`/`G` (先頭/末尾), `Tab`/`Shift+Tab` (インタラクティブ), `h`/`H` (見出し), `D` (ランドマーク), `r`/`R` (AX ツリー再取得), `L` (ライブ更新トグル), `q`/`Ctrl+C` (終了)。
 
 ### 将来のパッケージ (未実装)
 

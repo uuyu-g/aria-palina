@@ -1,13 +1,19 @@
-import type { A11yNode, ICDPClient } from "@aria-palina/core";
+import type { A11yNode, AXUpdateCause, AXUpdateSubscription, ICDPClient } from "@aria-palina/core";
 import {
   clearHighlight,
+  delay,
+  diffLiveRegions,
   disableOverlay,
   enableOverlay,
   extractA11yTree,
   highlightNode,
   scrollIntoView,
+  subscribeAXTreeUpdates,
+  waitForFunction,
   waitForNetworkIdle,
+  waitForSelector,
 } from "@aria-palina/core";
+import type { LiveChange } from "@aria-palina/core";
 import { createElement } from "react";
 import type { MinimalCDPSession } from "../playwright-cdp-adapter.js";
 import { adaptCDPSession } from "../playwright-cdp-adapter.js";
@@ -27,6 +33,11 @@ export interface TuiArgs {
   wait: "none" | "network-idle";
   idleTime: number;
   timeout: number;
+  waitForSelector?: string | undefined;
+  waitForFunction?: string | undefined;
+  delay?: number;
+  /** DOM 変化での自動再取得を有効にするか。@default true */
+  live?: boolean;
 }
 
 export interface BrowserHandle {
@@ -55,6 +66,28 @@ export interface TuiIO {
   renderer: TuiRenderer;
   /** テスト用: A11yNode 取得処理を差し替える。 */
   extractor?: (session: MinimalCDPSession, args: TuiArgs) => Promise<A11yNode[]>;
+}
+
+/**
+ * TUI の App に渡す「ライブ更新ブリッジ」。
+ *
+ * App 側は `subscribe` でリスナを登録し、ブラウザ側の非同期変化を受け取って
+ * `nodes` state を差し替える。`refresh` は `r` キー、`toggleLive` は `L` キー
+ * に対応する。CDP 購読の生ライフサイクルは `runTui` が完全に握り、App は
+ * ブリッジ越しにしか触らない。
+ */
+export interface LiveUpdate {
+  nodes: A11yNode[];
+  cause: AXUpdateCause;
+  liveChanges: LiveChange[];
+}
+
+export interface LiveBridge {
+  getSnapshot(): A11yNode[];
+  subscribe(listener: (update: LiveUpdate) => void): () => void;
+  refresh(): Promise<void>;
+  toggleLive(): Promise<boolean>;
+  isLiveEnabled(): boolean;
 }
 
 async function defaultBrowserFactory(opts: { headed: boolean }): Promise<BrowserHandle> {
@@ -93,6 +126,15 @@ async function defaultExtractor(session: MinimalCDPSession, args: TuiArgs): Prom
       idleTime: args.idleTime,
       timeout: args.timeout,
     });
+  }
+  if (args.waitForSelector !== undefined) {
+    await waitForSelector(adapter, args.waitForSelector, { timeout: args.timeout });
+  }
+  if (args.waitForFunction !== undefined) {
+    await waitForFunction(adapter, args.waitForFunction, { timeout: args.timeout });
+  }
+  if (args.delay !== undefined && args.delay > 0) {
+    await delay(args.delay);
   }
   return extractA11yTree(adapter);
 }
@@ -151,12 +193,89 @@ function createHighlightController(
   };
 }
 
+interface LiveBridgeInternals {
+  bridge: LiveBridge;
+  startup(): Promise<void>;
+  shutdown(): Promise<void>;
+}
+
+/**
+ * {@link LiveBridge} を構築し、`subscribeAXTreeUpdates` の購読ライフサイクルを
+ * 管理する。ライブ OFF 時は購読せず、`refresh()` だけが有効になる。
+ * 購読開始 (`startup`) と解除 (`shutdown`) は `runTui` が握る。
+ */
+function createLiveBridge(
+  adapter: ICDPClient,
+  args: TuiArgs,
+  initialNodes: A11yNode[],
+): LiveBridgeInternals {
+  let currentNodes = initialNodes;
+  let isLive = args.live !== false;
+  let subscription: AXUpdateSubscription | null = null;
+  const listeners = new Set<(u: LiveUpdate) => void>();
+
+  const notify = (nodes: A11yNode[], cause: AXUpdateCause): void => {
+    const filtered = applyRoleFilter(nodes, args.role);
+    const liveChanges = diffLiveRegions(currentNodes, filtered);
+    currentNodes = filtered;
+    for (const l of listeners) l({ nodes: filtered, cause, liveChanges });
+  };
+
+  async function ensureSubscribed(): Promise<void> {
+    if (subscription || !isLive) return;
+    try {
+      subscription = await subscribeAXTreeUpdates(adapter, notify);
+    } catch {
+      // 購読失敗時は live OFF 状態にフォールバック
+      isLive = false;
+    }
+  }
+
+  async function teardown(): Promise<void> {
+    const s = subscription;
+    subscription = null;
+    if (s) await safeIgnore(s.unsubscribe());
+  }
+
+  const bridge: LiveBridge = {
+    getSnapshot: () => currentNodes,
+    subscribe(listener) {
+      listeners.add(listener);
+      return (): void => {
+        listeners.delete(listener);
+      };
+    },
+    async refresh(): Promise<void> {
+      try {
+        const fresh = await extractA11yTree(adapter);
+        notify(fresh, "manual");
+      } catch {
+        // ブラウザが閉じられた等のエラーは握りつぶす
+      }
+    },
+    async toggleLive(): Promise<boolean> {
+      isLive = !isLive;
+      if (isLive) await ensureSubscribed();
+      else await teardown();
+      return isLive;
+    },
+    isLiveEnabled: () => isLive,
+  };
+
+  return { bridge, startup: ensureSubscribed, shutdown: teardown };
+}
+
 /**
  * TUI モードの実行エントリポイント。
  *
  * CLI と同じ引数を受け取り、Playwright 経由で AOM を抽出した後 Ink で
  * 描画する。`runCli` から `--tui` フラグ時に dynamic import される
  * ことを想定している。
+ *
+ * `args.live !== false` のとき、初回抽出後に {@link subscribeAXTreeUpdates}
+ * で DOM/Page イベントを購読し、ブラウザ側の非同期変化に追従する。App は
+ * {@link LiveBridge} を介して更新を受け取り、`r` / `L` キーで手動再取得
+ * とライブトグルをユーザーに提供する。
  */
 export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
   const stderr = io.stderr;
@@ -176,15 +295,20 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
   let highlightController: HighlightController | null = null;
   let highlightAdapter: ICDPClient | null = null;
   let highlightFirstError: unknown = null;
+  let live: LiveBridgeInternals | null = null;
   try {
     handle = await browserFactory({ headed: args.headed });
     const session = await handle.newCDPSessionForUrl(args.url);
     const nodes = await extractor(session, args);
 
     const filteredNodes = applyRoleFilter(nodes, args.role);
+    const adapter = adaptCDPSession(session);
+    live = createLiveBridge(adapter, args, filteredNodes);
+    // 初回購読。購読対象が DOM/Page ドメインであり、Overlay とは独立。
+    await live.startup();
 
     if (args.headed) {
-      highlightAdapter = adaptCDPSession(session);
+      highlightAdapter = adapter;
       try {
         await enableOverlay(highlightAdapter);
         highlightController = createHighlightController(highlightAdapter, (error) => {
@@ -201,6 +325,7 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
     const element = createElement(App, {
       url: args.url,
       nodes: filteredNodes,
+      liveBridge: live.bridge,
       highlightController,
     });
 
@@ -211,6 +336,7 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
     });
 
     await instance.waitUntilExit();
+    await live.shutdown();
     if (highlightAdapter !== null) {
       await safeIgnore(clearHighlight(highlightAdapter));
       await safeIgnore(disableOverlay(highlightAdapter));
@@ -233,6 +359,7 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
     }
     return 1;
   } finally {
+    if (live) await safeIgnore(live.shutdown());
     await handle?.close();
   }
 }

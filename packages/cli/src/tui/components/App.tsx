@@ -7,7 +7,8 @@ import {
   type NodeKind,
 } from "@aria-palina/core";
 import { Box, Text, useApp, useInput, useStdout, type Key } from "ink";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { LiveBridge, LiveUpdate } from "../run.js";
 import { useHighlight, type HighlightController } from "../use-highlight.js";
 import { FilterModal } from "./FilterModal.js";
 import { VirtualList } from "./VirtualList.js";
@@ -26,6 +27,11 @@ export interface AppProps {
   highlightController?: HighlightController | null;
   /** カーソル変更から CDP 発火までの debounce (ms)。テスト用。 */
   highlightDebounceMs?: number;
+  /**
+   * ブラウザ側の DOM 変化を購読するためのブリッジ。未指定時は静的スナップショット
+   * 表示のみとなり、`r` / `L` キーは無効になる。
+   */
+  liveBridge?: LiveBridge | null;
 }
 
 const HEADER_LINES = 1;
@@ -42,7 +48,11 @@ const KIND_LABEL: Readonly<Record<NodeKind, string>> = {
   interactive: "インタラクティブ",
 };
 
-const FOOTER_NORMAL = "↑/↓ 移動 Tab フォーカス h 見出し d ランドマーク g/G 先頭末尾 q 終了";
+const FOOTER_NORMAL =
+  "↑/↓ 移動 Tab フォーカス h 見出し d ランドマーク g/G 先頭末尾 r 再取得 L ライブ q 終了";
+
+/** live 通知の自動消滅までの ms。 */
+const LIVE_STATUS_TTL = 4_000;
 
 /**
  * `from` の位置から最寄りの `kind` 一致ノードを探す。
@@ -61,16 +71,72 @@ function findNearest(nodes: readonly A11yNode[], from: number, kind: NodeKind): 
 
 export function App({
   url,
-  nodes,
+  nodes: initialNodes,
   viewportOverride,
   onExit,
   highlightController = null,
   highlightDebounceMs,
+  liveBridge = null,
 }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
+  const [nodes, setNodes] = useState<A11yNode[]>(initialNodes);
   const [cursor, setCursor] = useState(0);
   const [modalKind, setModalKind] = useState<NodeKind | null>(null);
+  const [liveEnabled, setLiveEnabled] = useState<boolean>(
+    liveBridge ? liveBridge.isLiveEnabled() : false,
+  );
+  const [liveStatus, setLiveStatus] = useState<string | null>(null);
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
+
+  // 購読: ライブブリッジから更新を受け取って nodes を差し替える。カーソル位置は
+  // backendNodeId 一致で保存復元し、見失った場合のみ 0 にフォールバック。
+  useEffect(() => {
+    if (!liveBridge) return;
+    const unsubscribe = liveBridge.subscribe((update: LiveUpdate) => {
+      setNodes((prev) => {
+        const prevId = prev[cursorRef.current]?.backendNodeId;
+        if (prevId && prevId > 0) {
+          const nextCursor = update.nodes.findIndex((n) => n.backendNodeId === prevId);
+          if (nextCursor !== -1 && nextCursor !== cursorRef.current) {
+            setCursor(nextCursor);
+          } else if (nextCursor === -1) {
+            setCursor(0);
+          }
+        }
+        return update.nodes;
+      });
+      // aria-live 相当の変化があれば status にメッセージを流す (NVDA 風通知)。
+      const effective = update.liveChanges.filter((c) => c.politeness !== "off");
+      if (effective.length > 0) {
+        const head = effective[0];
+        if (head) {
+          const label = head.kind === "removed" ? head.before : head.after;
+          const prefix = head.politeness === "assertive" ? "!" : "♪";
+          setLiveStatus(`${prefix} ${label ?? ""}`);
+        }
+      } else if (update.cause !== "manual" && update.nodes.length !== nodes.length) {
+        setLiveStatus(`⟳ ${update.nodes.length}件に更新`);
+      }
+    });
+    return unsubscribe;
+    // liveBridge は実質 runTui のライフタイムで安定。依存に含めない意図あり。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveBridge]);
+
+  // 初期 props の変化にも追従 (テスト用)。
+  useEffect(() => {
+    if (liveBridge) return;
+    setNodes(initialNodes);
+  }, [initialNodes, liveBridge]);
+
+  // liveStatus の自動消滅。
+  useEffect(() => {
+    if (liveStatus === null) return;
+    const id = setTimeout(() => setLiveStatus(null), LIVE_STATUS_TTL);
+    return () => clearTimeout(id);
+  }, [liveStatus]);
 
   const cursorBackendNodeId = nodes[cursor]?.backendNodeId ?? 0;
   useHighlight(highlightController, cursorBackendNodeId, {
@@ -169,6 +235,22 @@ export function App({
       openModal("landmark");
       return;
     }
+    if (input === "r" || input === "R") {
+      if (liveBridge) {
+        setLiveStatus("⟳ 再取得中...");
+        void liveBridge.refresh();
+      }
+      return;
+    }
+    if (input === "L") {
+      if (liveBridge) {
+        void liveBridge.toggleLive().then((enabled) => {
+          setLiveEnabled(enabled);
+          setLiveStatus(enabled ? "⟳ ライブ更新 ON" : "⏸ ライブ更新 OFF");
+        });
+      }
+      return;
+    }
   }
 
   function handleModalMode(input: string, key: Key, kind: NodeKind) {
@@ -254,6 +336,8 @@ export function App({
         : `${cursor + 1}/${nodes.length}`
       : `${KIND_LABEL[modalKind]} ${modalCursor + 1}/${filteredNodes.length}`;
 
+  const liveIndicator = liveBridge ? (liveEnabled ? "[live]" : "[live:off]") : "";
+
   return (
     <Box flexDirection="column">
       <Box>
@@ -262,6 +346,18 @@ export function App({
         <Text dimColor>{url}</Text>
         <Text> </Text>
         <Text color="gray">[{position}]</Text>
+        {liveIndicator ? (
+          <>
+            <Text> </Text>
+            <Text color={liveEnabled ? "green" : "gray"}>{liveIndicator}</Text>
+          </>
+        ) : null}
+        {liveStatus ? (
+          <>
+            <Text> </Text>
+            <Text color="yellow">{liveStatus}</Text>
+          </>
+        ) : null}
       </Box>
       {modalKind !== null ? (
         <FilterModal
