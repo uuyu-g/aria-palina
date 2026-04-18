@@ -1,9 +1,17 @@
-import type { A11yNode } from "@aria-palina/core";
-import { extractA11yTree, waitForNetworkIdle } from "@aria-palina/core";
+import type { A11yNode, ICDPClient } from "@aria-palina/core";
+import {
+  clearHighlight,
+  disableOverlay,
+  enableOverlay,
+  extractA11yTree,
+  highlightNode,
+  waitForNetworkIdle,
+} from "@aria-palina/core";
 import { createElement } from "react";
 import type { MinimalCDPSession } from "../playwright-cdp-adapter.js";
 import { adaptCDPSession } from "../playwright-cdp-adapter.js";
 import { App } from "./components/App.js";
+import type { HighlightController } from "./use-highlight.js";
 
 /**
  * TUI が利用する CLI 引数の最小形。
@@ -102,6 +110,29 @@ function applyRoleFilter(nodes: A11yNode[], roles: string[] | undefined): A11yNo
   return filtered.map((n) => ({ ...n, depth: n.depth - minDepth }));
 }
 
+function safeIgnore(p: Promise<unknown>): Promise<void> {
+  return p.then(
+    () => undefined,
+    () => undefined,
+  );
+}
+
+/**
+ * `--headed` 時に App へ渡す HighlightController。
+ * CDP コマンドはすべて fire-and-forget で発行し、ブラウザが既に閉じられて
+ * いた場合などのエラーは TUI 描画を壊さないよう完全に黙殺する。
+ */
+function createHighlightController(adapter: ICDPClient): HighlightController {
+  return {
+    highlight(backendNodeId: number) {
+      void safeIgnore(highlightNode(adapter, backendNodeId));
+    },
+    clear() {
+      void safeIgnore(clearHighlight(adapter));
+    },
+  };
+}
+
 /**
  * TUI モードの実行エントリポイント。
  *
@@ -124,6 +155,8 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
   const extractor = io.extractor ?? defaultExtractor;
 
   let handle: BrowserHandle | undefined;
+  let highlightController: HighlightController | null = null;
+  let highlightAdapter: ICDPClient | null = null;
   try {
     handle = await browserFactory({ headed: args.headed });
     const session = await handle.newCDPSessionForUrl(args.url);
@@ -131,9 +164,21 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
 
     const filteredNodes = applyRoleFilter(nodes, args.role);
 
+    if (args.headed) {
+      highlightAdapter = adaptCDPSession(session);
+      try {
+        await enableOverlay(highlightAdapter);
+        highlightController = createHighlightController(highlightAdapter);
+      } catch {
+        // Overlay enable に失敗しても TUI 起動自体は止めない
+        highlightAdapter = null;
+      }
+    }
+
     const element = createElement(App, {
       url: args.url,
       nodes: filteredNodes,
+      highlightController,
     });
 
     const instance = await renderer(element, {
@@ -143,6 +188,10 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
     });
 
     await instance.waitUntilExit();
+    if (highlightAdapter !== null) {
+      await safeIgnore(clearHighlight(highlightAdapter));
+      await safeIgnore(disableOverlay(highlightAdapter));
+    }
     return 0;
   } catch (error) {
     if (isBrowserNotFound(error)) {

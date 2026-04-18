@@ -437,3 +437,71 @@ describe("App filter modal", () => {
     unmount();
   });
 });
+
+describe("App highlight controller", () => {
+  test("highlightController が null のときは highlight も clear も呼ばれない", async () => {
+    const nodes = makeMixedNodes();
+    const calls: Array<{ kind: "highlight" | "clear"; id?: number }> = [];
+    const { stdin, unmount } = render(
+      <App
+        url="https://example.com"
+        nodes={nodes}
+        viewportOverride={10}
+        highlightController={null}
+        highlightDebounceMs={0}
+      />,
+    );
+    await waitFrames();
+    stdin.write("\u001B[B"); // ↓
+    await waitFrames();
+    unmount();
+    await waitFrames();
+    expect(calls).toEqual([]);
+  });
+
+  test("マウント直後とカーソル変更時に backendNodeId を highlight に渡す", async () => {
+    const nodes = makeMixedNodes();
+    const calls: Array<{ kind: "highlight" | "clear"; id?: number }> = [];
+    const controller = {
+      highlight: (id: number) => calls.push({ kind: "highlight", id }),
+      clear: () => calls.push({ kind: "clear" }),
+    };
+    const { stdin, unmount } = render(
+      <App
+        url="https://example.com"
+        nodes={nodes}
+        viewportOverride={10}
+        highlightController={controller}
+        highlightDebounceMs={0}
+      />,
+    );
+    await waitFrames();
+    stdin.write("\u001B[B"); // ↓ → cursor=1 (見出し 1)
+    await waitFrames();
+    const highlights = calls.filter((c) => c.kind === "highlight").map((c) => c.id);
+    expect(highlights).toEqual([1, 2]); // 初期 cursor=0 (backendNodeId=1) → cursor=1 (backendNodeId=2)
+    unmount();
+  });
+
+  test("アンマウント時に clear が呼ばれる", async () => {
+    const nodes = makeMixedNodes();
+    const calls: Array<{ kind: "highlight" | "clear"; id?: number }> = [];
+    const controller = {
+      highlight: (id: number) => calls.push({ kind: "highlight", id }),
+      clear: () => calls.push({ kind: "clear" }),
+    };
+    const { unmount } = render(
+      <App
+        url="https://example.com"
+        nodes={nodes}
+        viewportOverride={10}
+        highlightController={controller}
+        highlightDebounceMs={0}
+      />,
+    );
+    await waitFrames();
+    unmount();
+    await waitFrames();
+    expect(calls.some((c) => c.kind === "clear")).toBe(true);
+  });
+});

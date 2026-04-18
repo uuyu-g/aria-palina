@@ -8,6 +8,7 @@ import {
 } from "@aria-palina/core";
 import { Box, Text, useApp, useInput, useStdout, type Key } from "ink";
 import { useMemo, useState } from "react";
+import { useHighlight, type HighlightController } from "../use-highlight.js";
 import { FilterModal } from "./FilterModal.js";
 import { VirtualList } from "./VirtualList.js";
 
@@ -18,6 +19,13 @@ export interface AppProps {
   viewportOverride?: number;
   /** 終了時に呼ばれるコールバック (ブラウザ close 用)。 */
   onExit?: () => void;
+  /**
+   * `--headed` モードでブラウザ画面と TUI カーソルを同期するためのコントローラ。
+   * `null` (既定) のときはハイライト処理を行わない。
+   */
+  highlightController?: HighlightController | null;
+  /** カーソル変更から CDP 発火までの debounce (ms)。テスト用。 */
+  highlightDebounceMs?: number;
 }
 
 const HEADER_LINES = 1;
@@ -51,11 +59,23 @@ function findNearest(nodes: readonly A11yNode[], from: number, kind: NodeKind): 
   return findNext(nodes, from, kind, -1);
 }
 
-export function App({ url, nodes, viewportOverride, onExit }: AppProps) {
+export function App({
+  url,
+  nodes,
+  viewportOverride,
+  onExit,
+  highlightController = null,
+  highlightDebounceMs,
+}: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [cursor, setCursor] = useState(0);
   const [modalKind, setModalKind] = useState<NodeKind | null>(null);
+
+  const cursorBackendNodeId = nodes[cursor]?.backendNodeId ?? 0;
+  useHighlight(highlightController, cursorBackendNodeId, {
+    ...(highlightDebounceMs !== undefined && { debounceMs: highlightDebounceMs }),
+  });
 
   const viewport = useMemo(() => {
     if (viewportOverride !== undefined) return Math.max(MIN_VIEWPORT, viewportOverride);

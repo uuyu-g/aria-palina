@@ -1,6 +1,6 @@
 # 📊 Implementation Progress
 
-> **Last Updated:** 2026-04-18
+> **Last Updated:** 2026-04-18 (Phase 6)
 > **Related:** [DD §4 Roadmap](./dd.md) / [PRD](./prd.md)
 
 本ドキュメントは、`docs/dd.md` §4「開発ロードマップ」の各フェーズの進捗を
@@ -25,7 +25,7 @@
 | 3 | Playwright 統合と ワンショット CLI | ✅ Done | `packages/cli/src/{args,colorize,formatter,playwright-cdp-adapter,run,bin,index}.ts` + `__tests__/` |
 | 4 | Ink TUI 基盤と パフォーマンス最適化 | ✅ Done | `packages/cli/src/tui/{run,virtual-window,role-style,index}.ts` + `components/{App,VirtualList,NodeRow}.tsx` + `__tests__/tui-*.{ts,tsx}` (※旧 `@aria-palina/tui` は CLI に統合済み。下記「CLI/TUI パッケージ統合」参照) |
 | 5 | デュアルナビゲーション実装 (TUI) | ✅ Done | `packages/core/src/node-kind.ts` (`findNext` / `filterByKind` / `cycleKind`) + `packages/cli/src/tui/components/App.tsx` (Tab / モーダルフィルタ `h`・`d`・←/→・Esc) + `__tests__/` |
-| 6 | Matrix View (Headed モード同期) | ⏳ Pending | — |
+| 6 | Matrix View (Headed モード同期) | ✅ Done | `packages/core/src/highlight.ts` (`enableOverlay` / `highlightNode` / `clearHighlight` / `disableOverlay`) + `packages/cli/src/tui/use-highlight.ts` + App `highlightController` prop + `runTui` の `--headed` 時 Overlay ライフサイクル + `__tests__/highlight.test.ts` / tui-app・tui-run 拡張 |
 | 7 | Chrome Extension (DevTools Panel) | ⏳ Pending | — |
 | 8 | Test Utilities (BDD) | ⏳ Pending | — |
 | 9 | 統合バイナリ `palina` の公開 | ⏳ Pending | — |
@@ -485,3 +485,88 @@ export { computeWindow, type VirtualWindow, type VirtualWindowInput } from "./vi
 ```
 
 `@aria-palina/tui` は workspace ごと削除されたため存在しない。`adaptCDPSession` は CLI 側の公開 API (`@aria-palina/cli`) から一本化して参照する。
+
+## Phase 6 実装メモ
+
+### スコープ
+
+`docs/dd.md` §3.3 / §4 Phase 6 で列挙されている以下を実装した:
+
+- TUI モードで `--headed` が指定された場合、CDP `Overlay` ドメインを通じて
+  カーソル位置の DOM ノードをブラウザ画面上で青い網掛けハイライトする
+  「TUI → ブラウザ」片方向同期。
+- 実行時のライフサイクル管理 (`Overlay.enable` 起動時、`hideHighlight` +
+  `Overlay.disable` 終了時)。
+
+### モジュール構成
+
+| モジュール | 責務 |
+| ---------- | ---- |
+| `packages/core/src/highlight.ts` | `enableOverlay` / `disableOverlay` / `highlightNode` / `clearHighlight` の薄いラッパー。`backendNodeId === 0` のときは `highlightNode` を no-op として握りつぶす。 |
+| `packages/cli/src/tui/use-highlight.ts` | `useHighlight(controller, backendNodeId, options?)` フック。`backendNodeId` 変更を debounce (既定 50ms) してから `controller.highlight()` を呼び、アンマウント時に `controller.clear()` を呼ぶ。`controller === null` のときは完全 no-op。 |
+| `packages/cli/src/tui/components/App.tsx` | `highlightController?: HighlightController \| null` prop を受け取り、`useHighlight` でカーソル変更を監視。フィルタモード中も同じ `cursor` (フル配列) の `backendNodeId` を渡す。 |
+| `packages/cli/src/tui/run.ts` | `args.headed === true` のときのみ `adaptCDPSession(session)` を `enableOverlay` し、`HighlightController` を構築して App に渡す。`waitUntilExit()` 後に `clearHighlight` + `disableOverlay` を握りつぶしながら呼ぶ。 |
+
+### 設計判断
+
+- **逆方向同期は未実装**: DD §3.3 は「双方向」と表記しているが Phase 6 のスコープは
+  TUI → ブラウザの片方向のみとした。逆方向 (ブラウザクリック → TUI カーソル移動) は
+  `Overlay.inspectNodeRequested` 等のイベント駆動が必要で、実装コスト/UX 価値が
+  見合わないため Phase 7 (Chrome Extension) で改めて検討する。
+- **fire-and-forget**: `HighlightController.highlight` / `clear` は Promise を返さず、
+  内部で `safeIgnore` してエラーを完全黙殺する。ブラウザが既に閉じられた状態の
+  CDP コマンド失敗が TUI 描画を壊すのを防ぐ。
+- **debounce 50ms**: `j` 連打時の CDP 呼び出し氾濫を抑える。50ms はキー連打
+  (典型的に 30〜80ms 間隔) を 1 回の `highlightNode` に集約しつつ、単発操作の
+  視覚遅延として知覚されない閾値として選択。
+- **`backendNodeId === 0` で no-op**: `flatten.ts` は `backendDOMNodeId` 欠落時に 0 を
+  フォールバック格納するため、core 側で 0 を弾けば呼び出し側はガード不要。
+- **`Overlay.enable` 失敗を握りつぶす**: 一部環境で Overlay が enable できなくても
+  TUI 起動自体は止めない。`highlightController = null` のまま続行し、ハイライト
+  だけが無効化される (UX 劣化はあるが致命的ではない)。
+- **headless 互換**: `args.headed === false` のときは `Overlay` 系コマンドを一切
+  発行せず、`highlightController = null` を App に渡す。既存の headless TUI 挙動と
+  完全互換。
+
+### テスト
+
+- `packages/core/src/__tests__/highlight.test.ts` — 純粋な CDP 呼び出し検証
+  (古典派、外部境界モック)。`Overlay.enable` / `Overlay.highlightNode` の
+  既定 `contentColor` / `backendNodeId === 0` no-op / カスタム HighlightConfig マージ /
+  `Overlay.hideHighlight` / `Overlay.disable` を網羅。
+- `packages/cli/src/__tests__/tui-app.test.tsx` — `App highlight controller` describe
+  に 3 本追加。`controller=null` で何も呼ばれないこと、マウント直後と ↓ 操作時に
+  `backendNodeId` 1→2 が `highlight` に渡ること、アンマウント時に `clear` が
+  呼ばれることを fake controller で検証。
+- `packages/cli/src/__tests__/tui-run.test.ts` — `--headed` 指定時に
+  `Overlay.enable` / `Overlay.hideHighlight` / `Overlay.disable` がセッションへ
+  発行されること、headless 時は `Overlay.*` が一切呼ばれず `highlightController` が
+  `null` であることを検証。
+
+### 公開 API 変更
+
+`@aria-palina/core`:
+
+```ts
+export {
+  clearHighlight,
+  disableOverlay,
+  enableOverlay,
+  highlightNode,
+  type HighlightConfig,
+  type RGBA,
+} from "./highlight.js";
+```
+
+`@aria-palina/cli/tui`:
+
+```ts
+export {
+  useHighlight,
+  type HighlightController,
+  type UseHighlightOptions,
+} from "./use-highlight.js";
+```
+
+`AppProps` に `highlightController?: HighlightController | null` と
+`highlightDebounceMs?: number` (テスト用) を追加。

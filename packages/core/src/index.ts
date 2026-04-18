@@ -6,3 +6,11 @@ export { buildSpeechText, type SpeechInput } from "./speech.js";
 export { extractA11yTree } from "./extract.js";
 export { waitForNetworkIdle, type NetworkIdleOptions } from "./wait-for-network-idle.js";
 export { cycleKind, filterByKind, findNext, matchesKind, type NodeKind } from "./node-kind.js";
+export {
+  clearHighlight,
+  disableOverlay,
+  enableOverlay,
+  highlightNode,
+  type HighlightConfig,
+  type RGBA,
+} from "./highlight.js";
