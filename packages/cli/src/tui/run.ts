@@ -93,7 +93,11 @@ export interface LiveBridge {
 async function defaultBrowserFactory(opts: { headed: boolean }): Promise<BrowserHandle> {
   const { chromium } = await import("playwright-core");
   const browser = await chromium.launch({ headless: !opts.headed });
-  const context = await browser.newContext();
+  // headed 時は viewport を null にして OS ウィンドウサイズに追従させる
+  // (Playwright 既定の 1280x720 固定だとリサイズしてもレスポンシブが効かないため)
+  const context = await browser.newContext({
+    viewport: opts.headed ? null : { width: 1280, height: 720 },
+  });
   return {
     async newCDPSessionForUrl(url: string): Promise<MinimalCDPSession> {
       const page = await context.newPage();
