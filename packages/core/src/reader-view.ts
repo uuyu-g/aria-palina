@@ -9,17 +9,22 @@
  * 1. ランドマーク (banner / navigation / main / complementary /
  *    contentinfo / region / search / form) を境界として配列を
  *    {@link ReaderSection} に区切る。
- * 2. ランドマークがネストしている場合 (`<banner><nav>...</nav></banner>`)
+ * 2. ランドマークがネストしている場合 (`<main>...<nav>...</nav>...</main>`)
  *    は、スタックで親子関係を追跡し、子セクションに
  *    `ReaderSection.depth` (ネスト段数) を付与する。外側のランドマークから
  *    抜けた時点で内側セクションは閉じられる。
- * 3. 各セクションは内部にアイテム列を持ち、先頭ランドマークの
+ * 3. 内側のランドマークが終わって外側に items が再び現れた場合、
+ *    元の出力位置順を保つために**継続セクション** (`continuation: true`)
+ *    を新たに `sections` 配列へ挿入する。継続セクションはレンダラー側で
+ *    見出し行を抑制して描画される (見出しの重複を避けつつ、入れ子内側の
+ *    後ろに来る外側コンテンツを正しい位置に出す)。
+ * 4. 各セクションは内部にアイテム列を持ち、先頭ランドマークの
  *    `depth` を基準にアイテムの `ReaderItem.depth` を相対化する。
- * 4. スクリーンリーダーが読み飛ばすだけの意味を持たないロール
+ * 5. スクリーンリーダーが読み飛ばすだけの意味を持たないロール
  *    (`none` / `presentation`) はアイテムから除外する。
  *    `generic` (名前なし) は `flattenAXTree` が既に潰しているため
  *    重複して処理しない。
- * 5. 最初のランドマーク以前や、全ランドマークを抜けた後に現れたノードは、
+ * 6. 最初のランドマーク以前や、全ランドマークを抜けた後に現れたノードは、
  *    暗黙の前置き・後置きセクション (`landmark: null`) に積む。
  *
  * 返される `ReaderSection[]` は出力順のフラット配列。ランドマークの入れ子
@@ -62,11 +67,18 @@ export interface ReaderSection {
    * セクションのネスト段数。
    * - `0` — トップレベル (どのランドマークにも包まれていない) / 暗黙セクション。
    * - `1` — 別のランドマーク直下に現れた入れ子ランドマーク。
-   *   例: `<banner><nav>...</nav></banner>` の `nav` は depth=1。
+   *   例: `<main>...<nav>...</nav></main>` の `nav` は depth=1。
    */
   depth: number;
   /** このセクションに属するアイテム列 (DFS 順)。 */
   items: ReaderItem[];
+  /**
+   * `true` のとき、このセクションは同じランドマークの「継続」を表す。
+   * 内側に入れ子ランドマークが挟まったあとに外側のコンテンツが再出現した
+   * 場合、元の DOM 順を保つために挿入される。レンダラーは見出し行を
+   * 描画せず、items のインデントだけを継承する。
+   */
+  continuation: boolean;
 }
 
 /**
@@ -102,8 +114,11 @@ function formatSectionLabel(landmark: A11yNode): string {
 }
 
 /**
- * 作業中セクションの内部表現。`landmark !== null` のセクションは
- * `openStack` に積まれ、後からアイテムが追加される。
+ * 作業中セクションの内部表現。
+ *
+ * `section` は現在 items を受け付ける「末尾」の ReaderSection を指す。
+ * 内側ランドマークが emit された後にこのセクションへ再びアイテムが
+ * 追加されるとき、新しい継続セクションへ差し替えられる。
  */
 interface WorkingSection {
   section: ReaderSection;
@@ -113,15 +128,20 @@ interface WorkingSection {
    * 暗黙セクションでは動的に最小 depth を追跡する。
    */
   baseDepth: number;
+  /**
+   * この working section が出力配列の「現在の末尾」として items を直接
+   * 追加できる状態かどうか。`false` のときは内側ランドマークが間に挟まった
+   * ことを意味し、次に items を追加するときは継続セクションを新規作成する。
+   */
+  isCurrent: boolean;
 }
 
 /**
  * `A11yNode[]` (DFS 平坦化済み) から {@link ReaderSection} の配列を構築する。
  *
- * ランドマークが入れ子になっている場合、セクションは外側→内側の順にフラット
- * 配列へ並び、`depth` フィールドが入れ子段数を表す。外側のランドマークから
- * 抜けた (= `node.depth <= outerLandmark.depth` が発生した) 時点で、より
- * 内側の開いていたセクションは全て閉じる。
+ * ランドマークが入れ子になっている場合、セクションは外側→内側→外側の続き
+ * の順にフラット配列へ並び、`depth` フィールドが入れ子段数を、
+ * `continuation` フィールドが「外側の続き」かどうかを表す。
  */
 export function buildReaderView(nodes: readonly A11yNode[]): ReaderSection[] {
   const sections: ReaderSection[] = [];
@@ -133,30 +153,40 @@ export function buildReaderView(nodes: readonly A11yNode[]): ReaderSection[] {
    */
   let currentPreamble: WorkingSection | null = null;
 
-  /** スタック最上位のランドマーク深さ以下にノードが降りたら、そのセクションを閉じる。 */
+  /**
+   * 外側ランドマークから抜けた子セクションを閉じる。
+   * 閉じた後に残った top は、間に内側セクションが emit されたことを意味する
+   * ので `isCurrent = false` にし、次回の addItem で継続セクションを生む。
+   */
   const closeExitedSections = (nodeDepth: number): void => {
     while (openStack.length > 0) {
       const top = openStack[openStack.length - 1];
       if (!top || !top.section.landmark) break;
       if (top.section.landmark.depth < nodeDepth) break;
       openStack.pop();
+      const newTop = openStack[openStack.length - 1];
+      if (newTop) newTop.isCurrent = false;
     }
   };
 
   for (const node of nodes) {
     if (LANDMARK_ROLES.has(node.role)) {
-      // 親ランドマークから抜けた子は閉じる。depth >= node.depth のものはすべて兄弟以上。
       closeExitedSections(node.depth);
       currentPreamble = null;
+      // 既存の開いているセクションは「途中で割り込まれた」状態になるので
+      // 全て isCurrent=false に落とす。次に外側へ items が戻ってきたら
+      // 継続セクションが作られる。
+      for (const entry of openStack) entry.isCurrent = false;
 
       const section: ReaderSection = {
         landmark: node,
         label: formatSectionLabel(node),
         depth: openStack.length, // スタックの残量 = ネスト段数
         items: [],
+        continuation: false,
       };
       sections.push(section);
-      openStack.push({ section, baseDepth: node.depth + 1 });
+      openStack.push({ section, baseDepth: node.depth + 1, isCurrent: true });
       continue;
     }
     if (SKIP_ROLES.has(node.role)) continue;
@@ -169,8 +199,9 @@ export function buildReaderView(nodes: readonly A11yNode[]): ReaderSection[] {
       // 新しい暗黙セクションを作り、そうでなければ既存の preamble に追記する。
       if (currentPreamble === null) {
         currentPreamble = {
-          section: { landmark: null, label: "", depth: 0, items: [] },
+          section: { landmark: null, label: "", depth: 0, items: [], continuation: false },
           baseDepth: node.depth, // 最初のアイテムの depth を 0 として採番
+          isCurrent: true,
         };
         sections.push(currentPreamble.section);
       }
@@ -188,9 +219,23 @@ export function buildReaderView(nodes: readonly A11yNode[]): ReaderSection[] {
       continue;
     }
 
-    // ランドマーク配下のアイテム: 最上位 (= 最も内側) のセクションに積む
+    // ランドマーク配下のアイテム: 最上位 (= 最も内側) のセクションに積む。
+    // 既に内側セクションが emit された後 (isCurrent=false) なら、見出し抑制の
+    // 継続セクションを新規作成して出力配列の末尾に挿入する。
     const top = openStack[openStack.length - 1]!;
     currentPreamble = null;
+    if (!top.isCurrent) {
+      const continuation: ReaderSection = {
+        landmark: top.section.landmark,
+        label: top.section.label,
+        depth: top.section.depth,
+        items: [],
+        continuation: true,
+      };
+      sections.push(continuation);
+      top.section = continuation;
+      top.isCurrent = true;
+    }
     const rel = node.depth - top.baseDepth;
     top.section.items.push({ node, depth: rel < 0 ? 0 : rel });
   }

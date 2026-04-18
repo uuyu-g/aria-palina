@@ -221,6 +221,63 @@ describe("ReaderList", () => {
     unmount();
   });
 
+  test("内側ランドマークが外側の途中に挟まると、外側の続きは見出しなしでインライン描画される", () => {
+    // <main><p>intro</p><nav>...<a>Overview</a></nav><p>after-nav</p></main>
+    const inlineNested: A11yNode[] = [
+      node({ backendNodeId: 1, role: "main", depth: 0, speechText: "[main]" }),
+      node({
+        backendNodeId: 2,
+        role: "paragraph",
+        depth: 1,
+        name: "intro",
+        speechText: "[paragraph] intro",
+      }),
+      node({
+        backendNodeId: 3,
+        role: "navigation",
+        depth: 1,
+        name: "User profile",
+        speechText: "[navigation] User profile",
+      }),
+      node({
+        backendNodeId: 4,
+        role: "link",
+        depth: 2,
+        name: "Overview",
+        speechText: "[link] Overview",
+      }),
+      node({
+        backendNodeId: 5,
+        role: "paragraph",
+        depth: 1,
+        name: "after-nav",
+        speechText: "[paragraph] after-nav",
+      }),
+    ];
+    // cursor=0 で main 見出し選択。after-nav は main 継続セクションの items として
+    // インラインで navigation の後に出ることを確認する。
+    const { lastFrame, unmount } = render(
+      <ReaderList nodes={inlineNested} cursor={0} viewport={20} />,
+    );
+    const frame = lastFrame() ?? "";
+    const lines = frame.split("\n").filter((l) => l.length > 0);
+    // 期待される並び:
+    // > ── main ──
+    //   [paragraph] intro
+    //   ── navigation「User profile」 ──
+    //   [link] Overview
+    //   [paragraph] after-nav   ← 継続セクションの item (見出し再描画なし)
+    expect(lines[0]).toContain("── main ──");
+    expect(lines[1]).toContain("[paragraph] intro");
+    expect(lines[2]).toContain("── navigation「User profile」 ──");
+    expect(lines[3]).toContain("[link] Overview");
+    expect(lines[4]).toContain("[paragraph] after-nav");
+    // main の見出し行は 1 度しか出ない (継続セクションで再描画されない)
+    const mainHeaderLines = lines.filter((l) => l.includes("── main ──"));
+    expect(mainHeaderLines.length).toBe(1);
+    unmount();
+  });
+
   test("viewport がセクション行数より小さいとき separator+カーソル周辺のみ描画される", () => {
     const { lastFrame, unmount } = render(
       <ReaderList nodes={sectionedNodes()} cursor={4} viewport={3} />,

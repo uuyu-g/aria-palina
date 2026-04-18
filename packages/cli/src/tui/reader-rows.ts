@@ -74,7 +74,9 @@ export function toReaderRows(nodes: readonly A11yNode[]): ReaderRowsResult {
   }
 
   for (const section of sections) {
-    if (section.landmark !== null) {
+    // 継続セクションは見出しを出さない (内側ランドマークを抜けて外側に
+    // 戻った続き)。アイテム行のインデントだけ前段と同じ規約で出す。
+    if (section.landmark !== null && !section.continuation) {
       const landmarkIndex = nodeToIndex.get(section.landmark);
       const rowIndex = rows.length;
       rows.push({

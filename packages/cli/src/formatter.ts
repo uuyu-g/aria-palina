@@ -24,6 +24,8 @@ export function formatTextOutput(nodes: A11yNode[], opts: TextFormatOptions): st
 const SEPARATOR_DASHES = "──";
 
 function renderSeparator(section: ReaderSection, indent: boolean, color: boolean): string {
+  // 継続セクションは見出しを描画しない (内側ランドマークを抜けて外側に戻った続き)。
+  if (section.continuation) return "";
   const prefix = indent ? "  ".repeat(section.depth) : "";
   const line =
     section.label.length > 0 ? `${SEPARATOR_DASHES} ${section.label} ${SEPARATOR_DASHES}` : "";

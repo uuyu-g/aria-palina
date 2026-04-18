@@ -105,7 +105,7 @@ describe("buildReaderView", () => {
     ]);
   });
 
-  test("ネストしたランドマークから外側へ戻ると、内側セクションは閉じられる", () => {
+  test("内側ランドマークを抜けて外側に戻ると、外側の続きが継続セクションとして挿入される", () => {
     // <banner depth=0>
     //   <nav depth=1><a>概要</a></nav>
     //   <p>ヘッダ注記</p>  ← nav を抜けて banner 直下に戻る
@@ -121,10 +121,46 @@ describe("buildReaderView", () => {
 
     const sections = buildReaderView(nodes);
 
-    expect(sections.map((s) => s.landmark?.role)).toEqual(["banner", "navigation", "main"]);
-    // ヘッダ注記は navigation を抜けた後の banner 配下に積まれる
-    expect(sections[0]?.items.map((i) => i.node.name)).toEqual(["ヘッダ注記"]);
+    // banner → navigation → banner(継続) → main の 4 セクション
+    expect(sections.map((s) => [s.landmark?.role, s.continuation])).toEqual([
+      ["banner", false],
+      ["navigation", false],
+      ["banner", true],
+      ["main", false],
+    ]);
+    expect(sections[0]?.items).toEqual([]); // banner 直接の最初の items は無し
     expect(sections[1]?.items.map((i) => i.node.name)).toEqual(["概要"]);
+    expect(sections[2]?.items.map((i) => i.node.name)).toEqual(["ヘッダ注記"]);
+  });
+
+  test("外側 main の途中に内側 nav が挟まると、main は前半・nav・main(継続) の順に分割される", () => {
+    // <main depth=0>
+    //   <p>intro</p>
+    //   <nav depth=1><a>Overview</a></nav>
+    //   <p>after-nav</p>
+    // </main>
+    const nodes: A11yNode[] = [
+      make({ role: "main", depth: 0 }),
+      make({ role: "paragraph", depth: 1, name: "intro" }),
+      make({ role: "navigation", depth: 1, name: "User profile" }),
+      make({ role: "link", depth: 2, name: "Overview" }),
+      make({ role: "paragraph", depth: 1, name: "after-nav" }),
+    ];
+
+    const sections = buildReaderView(nodes);
+
+    expect(
+      sections.map((s) => [
+        s.landmark?.role,
+        s.label,
+        s.continuation,
+        s.items.map((i) => i.node.name),
+      ]),
+    ).toEqual([
+      ["main", "main", false, ["intro"]],
+      ["navigation", "navigation「User profile」", false, ["Overview"]],
+      ["main", "main", true, ["after-nav"]],
+    ]);
   });
 
   test("全ランドマークを抜けた後のノードは新しい暗黙セクションに積まれる", () => {

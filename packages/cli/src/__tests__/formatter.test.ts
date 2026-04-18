@@ -257,6 +257,77 @@ describe("formatReaderTextOutput", () => {
     expect(result).toBe("[heading1] タイトル");
   });
 
+  test("外側ランドマークの途中に内側が挟まると、外側の続きは見出しなしでインラインに出る", () => {
+    // <main><p>intro</p><nav><a>Overview</a></nav><p>after-nav</p></main>
+    const nodes: A11yNode[] = [
+      {
+        backendNodeId: 1,
+        role: "main",
+        name: "",
+        depth: 0,
+        properties: {},
+        state: {},
+        speechText: "[main]",
+        isFocusable: false,
+        isIgnored: false,
+      },
+      {
+        backendNodeId: 2,
+        role: "paragraph",
+        name: "intro",
+        depth: 1,
+        properties: {},
+        state: {},
+        speechText: "[paragraph] intro",
+        isFocusable: false,
+        isIgnored: false,
+      },
+      {
+        backendNodeId: 3,
+        role: "navigation",
+        name: "User profile",
+        depth: 1,
+        properties: {},
+        state: {},
+        speechText: "[navigation] User profile",
+        isFocusable: false,
+        isIgnored: false,
+      },
+      {
+        backendNodeId: 4,
+        role: "link",
+        name: "Overview",
+        depth: 2,
+        properties: {},
+        state: {},
+        speechText: "[link] Overview",
+        isFocusable: true,
+        isIgnored: false,
+      },
+      {
+        backendNodeId: 5,
+        role: "paragraph",
+        name: "after-nav",
+        depth: 1,
+        properties: {},
+        state: {},
+        speechText: "[paragraph] after-nav",
+        isFocusable: false,
+        isIgnored: false,
+      },
+    ];
+    const result = formatReaderTextOutput(nodes, { indent: true, color: false });
+    expect(result).toBe(
+      [
+        "── main ──",
+        "  [paragraph] intro",
+        "  ── navigation「User profile」 ──",
+        "    [link] Overview",
+        "  [paragraph] after-nav",
+      ].join("\n"),
+    );
+  });
+
   test("color:true のとき罫線にも ANSI カラーが適用される", () => {
     const result = formatReaderTextOutput(sectionedNodes(), { indent: false, color: true });
     // main のランドマークは bold + blue のスタイルが適用される
