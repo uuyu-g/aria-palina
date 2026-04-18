@@ -13,16 +13,21 @@ export interface ReaderListProps {
   viewport: number;
 }
 
-/** ランドマーク区切りの罫線幅。CLI 側の `formatReaderTextOutput` と揃える。 */
-const SEPARATOR_DASHES = "──";
+/** 左レール文字と角記号。CLI 側 `formatReaderTextOutput` と揃える。 */
+const RAIL = "│ ";
+const CORNER_OPEN = "┌── ";
+const CORNER_CONTINUE = "├── ";
 
 /**
  * リーダブルビュー (`view=reader`) のための仮想スクロールリスト。
  *
- * 内部的に {@link toReaderRows} でランドマーク区切りの罫線を含んだ行配列を
- * 構築し、`computeWindow` で可視レンジを算出する。cursor は従来通り
- * A11yNode 配列のインデックスで管理され、ナビゲーション挙動は VirtualList と
- * 同一 (separator 行は飛ばされる格好になる)。
+ * 「左レール半ボックス」方式で章立てを視覚化する:
+ * - ランドマーク境界の見出し行 (`┌── banner` / `├── main` 等)
+ * - 各行頭に祖先ランドマーク数ぶん `│ ` レールを垂らす
+ * - 閉じ線 (`└──`) は出さない (ライブ更新で破綻させないため)
+ *
+ * cursor は従来通り `A11yNode[]` 上のインデックスで管理され、ナビゲーション
+ * 挙動は VirtualList と同一 (separator 行は飛ばされる格好になる)。
  */
 export function ReaderList({ nodes, cursor, viewport }: ReaderListProps) {
   const { rows, cursorRow } = useMemo(() => {
@@ -52,7 +57,8 @@ export function ReaderList({ nodes, cursor, viewport }: ReaderListProps) {
         const globalRow = start + i;
         if (row.kind === "separator") {
           const style = roleTextStyle(row.role);
-          const prefix = "  ".repeat(row.indent);
+          const rails = RAIL.repeat(row.rails);
+          const corner = row.variant === "open" ? CORNER_OPEN : CORNER_CONTINUE;
           return (
             <Text
               key={`sep-${globalRow}`}
@@ -60,19 +66,18 @@ export function ReaderList({ nodes, cursor, viewport }: ReaderListProps) {
               bold={style.bold}
               wrap="truncate-end"
             >
-              {`${prefix}${SEPARATOR_DASHES} ${row.label} ${SEPARATOR_DASHES}`}
+              {`${rails}${corner}${row.label}`}
             </Text>
           );
         }
         const selected = row.nodeIndex === cursor;
-        // NodeRow は `node.depth` をインデントに使うため、合算済みの indent を
-        // 上書きした浅いコピーを渡して reader view 上の階層を表示する。
-        const displayNode: A11yNode = { ...row.node, depth: row.indent };
+        const indentPrefix = RAIL.repeat(row.rails) + "  ".repeat(row.extraIndent);
         return (
           <NodeRow
             key={`${row.node.backendNodeId}-${row.nodeIndex}`}
-            node={displayNode}
+            node={row.node}
             selected={selected}
+            indentPrefix={indentPrefix}
           />
         );
       })}

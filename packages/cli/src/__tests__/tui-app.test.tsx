@@ -986,7 +986,7 @@ describe("App highlight controller", () => {
     );
     await waitFrames();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("── main「メイン」 ──");
+    expect(frame).toContain("┌── main「メイン」");
     expect(frame).toContain("タイトル");
     unmount();
   });
@@ -1013,7 +1013,8 @@ describe("App highlight controller", () => {
     );
     await waitFrames();
     const frame = lastFrame() ?? "";
-    expect(frame).not.toContain("──");
+    expect(frame).not.toContain("┌──");
+    expect(frame).not.toContain("├──");
     expect(frame).toContain("[main] メイン");
     expect(frame).toContain("タイトル");
     unmount();

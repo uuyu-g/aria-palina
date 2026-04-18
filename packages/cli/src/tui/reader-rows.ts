@@ -5,11 +5,12 @@
  * 純粋関数を提供する。`ReaderList` はここで作られた {@link ReaderRow} を
  * `computeWindow` に流し込み、可視分だけを描画する。
  *
- * 各行は罫線 (separator) かノード (node) のどちらかで、いずれも描画時に
- * 使う **合計インデント段数** (`indent`) を持つ。`ReaderSection.depth`
- * (ランドマーク入れ子段数) と `ReaderItem.depth` (セクション内 depth) の
- * 合算をここで計算しておくことで、コンポーネント側はインデントの意味論を
- * 意識せずに済む。
+ * 描画は「左レール半ボックス」方式を採用する (候補 B、閉じない派)。
+ * - ランドマーク境界は `┌── label` (その rail 位置で最初のセクション) か
+ *   `├── label` (同一 or 浅い rail に既出セクションがある場合) で始まる行。
+ * - 各行の左側に祖先ランドマーク数だけ `│ ` のレールを垂らす。
+ * - 閉じ (`└──`) は出さない。ライブ更新・ストリーミング時の再描画が破綻
+ *   しないため。
  */
 
 import { buildReaderView, type A11yNode } from "@aria-palina/core";
@@ -20,15 +21,24 @@ export type ReaderRow =
       kind: "separator";
       label: string;
       role: string;
-      /** 描画時のインデント段数 (ランドマーク入れ子に応じて増える)。 */
-      indent: number;
+      /** 祖先ランドマーク段数 = 描画時の左レール本数。 */
+      rails: number;
+      /**
+       * セクション見出しの開閉種別。
+       * - `"open"` — この rail 位置で初めて開くセクション (`┌──`)
+       * - `"continue"` — 同 or 浅い rail に既に別のセクションがあった
+       *   (`├──`、兄弟 or 外側への戻り)
+       */
+      variant: "open" | "continue";
     }
   | {
       kind: "node";
       node: A11yNode;
-      /** 描画時のインデント段数 (罫線より 1 段深い)。 */
-      indent: number;
       nodeIndex: number;
+      /** 祖先ランドマーク段数 = 描画時の左レール本数。 */
+      rails: number;
+      /** セクション内の相対インデント (スペース段数、item.depth と同値)。 */
+      extraIndent: number;
     };
 
 export interface ReaderRowsResult {
@@ -41,13 +51,10 @@ export interface ReaderRowsResult {
 /**
  * `A11yNode[]` から `ReaderRow[]` を構築する純粋関数。
  *
- * - 各セクションの先頭に `kind: "separator"` 行を挿入する。
- *   (ランドマーク無しセクションでは罫線を出さないため separator も挿入しない)
- * - 各アイテムは `kind: "node"` 行として、事前計算済みの `indent` を持つ。
- *   `indent = (section.depth + 1) + item.depth` (ランドマーク有セクション) /
- *   `indent = item.depth` (暗黙セクション)
- * - `nodeIndexToRow` は cursor が A11yNode インデックスで管理されている前提で、
- *   それを row インデックスへ変換するためのマップ。
+ * variant 判定ルール: 直前に発行した separator の rail 位置を記録しておき、
+ * `lastRail < section.depth` なら入れ子 (`"open"`) で `┌──` を描く。
+ * 等しいか浅い場合は「同一 rail に既存の章がある」状態なので `"continue"`
+ * で `├──` を描く。
  */
 export function toReaderRows(nodes: readonly A11yNode[]): ReaderRowsResult {
   const sections = buildReaderView(nodes);
@@ -56,33 +63,39 @@ export function toReaderRows(nodes: readonly A11yNode[]): ReaderRowsResult {
 
   // `buildReaderView` が保持する `ReaderItem.node` は元配列の参照と同一だが、
   // ここでは cursor 変換のため nodes 配列上のインデックスが必要。
-  // 参照の identity を Map に逆引きさせる。
   const nodeToIndex = new Map<A11yNode, number>();
   for (let i = 0; i < nodes.length; i++) {
     nodeToIndex.set(nodes[i] as A11yNode, i);
   }
 
+  let lastSeparatorRail = -1;
   for (const section of sections) {
     if (section.landmark !== null) {
+      const variant: "open" | "continue" = lastSeparatorRail < section.depth ? "open" : "continue";
       rows.push({
         kind: "separator",
         label: section.label,
         role: section.landmark.role,
-        indent: section.depth,
+        rails: section.depth,
+        variant,
       });
+      lastSeparatorRail = section.depth;
     }
-    const itemBaseIndent = section.landmark !== null ? section.depth + 1 : section.depth;
+    // ランドマーク配下のアイテムは section.depth + 1 本のレールを持つ。
+    // 暗黙セクション (landmark: null) の配下はそもそもランドマーク囲みが無い
+    // ため、レール 0 本・item.depth だけで描画する。
+    const itemRails = section.landmark !== null ? section.depth + 1 : 0;
     for (const item of section.items) {
       const nodeIndex = nodeToIndex.get(item.node);
       if (nodeIndex === undefined) continue;
-      const rowIndex = rows.length;
       rows.push({
         kind: "node",
         node: item.node,
-        indent: itemBaseIndent + item.depth,
         nodeIndex,
+        rails: itemRails,
+        extraIndent: item.depth,
       });
-      nodeIndexToRow.set(nodeIndex, rowIndex);
+      nodeIndexToRow.set(nodeIndex, rows.length - 1);
     }
   }
 
