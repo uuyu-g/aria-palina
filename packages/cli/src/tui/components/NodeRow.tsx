@@ -6,16 +6,10 @@ import { roleTextStyle } from "../role-style.js";
 export interface NodeRowProps {
   node: A11yNode;
   selected: boolean;
-  /**
-   * `node.depth` ベースのインデント文字列を上書きする。
-   * ReaderList が左レール (`│ `) を含んだプレフィクスを渡すために使う。
-   * 未指定のときは従来どおり `"  ".repeat(node.depth)` になる。
-   */
-  indentPrefix?: string;
 }
 
-function NodeRowImpl({ node, selected, indentPrefix }: NodeRowProps) {
-  const indent = indentPrefix ?? "  ".repeat(node.depth);
+function NodeRowImpl({ node, selected }: NodeRowProps) {
+  const indent = "  ".repeat(node.depth);
   const prefix = selected ? "> " : "  ";
   const style = roleTextStyle(node.role);
 

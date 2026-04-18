@@ -1,4 +1,4 @@
-import { buildReaderView, type A11yNode } from "@aria-palina/core";
+import { buildReaderView, type A11yNode, type ReaderSection } from "@aria-palina/core";
 import { colorizeByRole } from "./colorize.js";
 
 export interface TextFormatOptions {
@@ -20,45 +20,44 @@ export function formatTextOutput(nodes: A11yNode[], opts: TextFormatOptions): st
     .join("\n");
 }
 
-/** 左レール文字 (1 段ぶん、末尾スペース付き)。 */
-const RAIL = "│ ";
-/** セクション見出し先頭の角。「開く」「続く」の 2 種のみで、閉じは出さない。 */
-const CORNER_OPEN = "┌── ";
-const CORNER_CONTINUE = "├── ";
+/** ランドマーク境界に描画する罫線幅。幅狭ターミナルでも見切れない値を選ぶ。 */
+const SEPARATOR_DASHES = "──";
+
+function renderSeparator(section: ReaderSection, indent: boolean, color: boolean): string {
+  const prefix = indent ? "  ".repeat(section.depth) : "";
+  const line =
+    section.label.length > 0 ? `${SEPARATOR_DASHES} ${section.label} ${SEPARATOR_DASHES}` : "";
+  if (line.length === 0) return "";
+  const body = color ? colorizeByRole(section.landmark?.role ?? "", line) : line;
+  return `${prefix}${body}`;
+}
 
 /**
  * リーダブルビュー (`--view=reader` 相当) のテキスト出力。
  *
- * ランドマーク境界ごとに `┌── {role}「{name}」` (入れ子の最初) または
- * `├── ...` (兄弟 / 外側への戻り) の見出し行を挟む。各行の左端には祖先
- * ランドマーク数だけ `│ ` のレールを垂らし、章の所属を視覚化する。
- * 閉じ (`└──`) は出さない (ライブ更新・ストリーミングで破綻しないため)。
+ * ランドマーク境界に `── {role}「{name}」 ──` の罫線を挟み、各セクション内では
+ * `ReaderItem.depth` (ランドマーク基準で再採番済み) と `ReaderSection.depth`
+ * (ランドマーク入れ子段数) の合算値をインデントに使う。ランドマークが付かない
+ * 暗黙セクションでは罫線を省略する。
  *
- * `indent: false` のときはレール・インデント・角記号を一切付けず、
- * 見出しラベル・speechText だけを改行で並べる (パイプ grep 向け)。
+ * インデント規約 (`indent: true` のとき):
+ * - 罫線行 = `section.depth * 2` スペース。
+ * - アイテム行 = `(section.depth + 1 + item.depth) * 2` スペース。
+ *   罫線行の直下 (item.depth=0) は罫線より 2 つ深いインデントになる。
  */
 export function formatReaderTextOutput(nodes: A11yNode[], opts: TextFormatOptions): string {
   const sections = buildReaderView(nodes);
   const lines: string[] = [];
-  let lastSeparatorRail = -1;
-
   for (const section of sections) {
-    if (section.landmark !== null && section.label.length > 0) {
-      const variant: "open" | "continue" = lastSeparatorRail < section.depth ? "open" : "continue";
-      const rails = opts.indent ? RAIL.repeat(section.depth) : "";
-      const corner = opts.indent ? (variant === "open" ? CORNER_OPEN : CORNER_CONTINUE) : "";
-      const body = `${rails}${corner}${section.label}`;
-      lines.push(opts.color ? colorizeByRole(section.landmark.role, body) : body);
-      lastSeparatorRail = section.depth;
-    }
-    const itemRails = section.landmark !== null ? section.depth + 1 : 0;
+    const separator = renderSeparator(section, opts.indent, opts.color);
+    if (separator.length > 0) lines.push(separator);
+    const itemBaseIndent = section.landmark !== null ? section.depth + 1 : section.depth;
     for (const item of section.items) {
-      const railPrefix = opts.indent ? RAIL.repeat(itemRails) : "";
-      const extraPrefix = opts.indent ? "  ".repeat(item.depth) : "";
+      const prefix = opts.indent ? "  ".repeat(itemBaseIndent + item.depth) : "";
       const text = opts.color
         ? colorizeByRole(item.node.role, item.node.speechText)
         : item.node.speechText;
-      lines.push(`${railPrefix}${extraPrefix}${text}`);
+      lines.push(`${prefix}${text}`);
     }
   }
   return lines.join("\n");

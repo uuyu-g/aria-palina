@@ -349,16 +349,19 @@ describe("runCli", () => {
       async close() {},
     });
 
-    const code = await runCli(["https://example.com", "--indent", "--no-color", "--wait", "none"], {
-      stdout: stdout.stream,
-      stderr: stderr.stream,
-      isTTY: false,
-      browserFactory: factory,
-    });
+    const code = await runCli(
+      ["https://example.com", "--no-indent", "--no-color", "--wait", "none"],
+      {
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        isTTY: false,
+        browserFactory: factory,
+      },
+    );
 
     expect(code).toBe(0);
-    expect(stdout.value).toContain("┌── main「記事」");
-    expect(stdout.value).toContain("│ [heading1] タイトル");
+    expect(stdout.value).toContain("── main「記事」 ──");
+    expect(stdout.value).toContain("タイトル");
   });
 
   test("--view raw では罫線を挟まず生ツリーの順で出力する", async () => {
@@ -377,9 +380,7 @@ describe("runCli", () => {
     );
 
     expect(code).toBe(0);
-    expect(stdout.value).not.toContain("┌──");
-    expect(stdout.value).not.toContain("├──");
-    expect(stdout.value).not.toContain("│ ");
+    expect(stdout.value).not.toContain("──");
     expect(stdout.value).toContain("タイトル");
     expect(stdout.value).toContain("送信");
   });

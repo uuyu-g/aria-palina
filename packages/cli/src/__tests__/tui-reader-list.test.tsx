@@ -59,28 +59,23 @@ describe("toReaderRows", () => {
   test("nodeIndexToRow は A11yNode インデックス → row インデックスを返す", () => {
     const nodes = sectionedNodes();
     const { nodeIndexToRow } = toReaderRows(nodes);
+    // nodes[1] = ロゴ heading → row index 1 (banner separator の次)
     expect(nodeIndexToRow.get(1)).toBe(1);
+    // nodes[2] = main ランドマーク → 除外 (アイテムではない)
     expect(nodeIndexToRow.has(2)).toBe(false);
+    // nodes[4] = paragraph 本文 → row index 4
     expect(nodeIndexToRow.get(4)).toBe(4);
   });
 
-  test("兄弟セクションは最初が open、2 番目以降が continue の variant になる", () => {
-    const { rows } = toReaderRows(sectionedNodes());
-    const banner = rows[0];
-    const main = rows[2];
-    expect(banner?.kind === "separator" && banner.variant).toBe("open");
-    expect(main?.kind === "separator" && main.variant).toBe("continue");
-  });
-
-  test("ノード行の rails は祖先ランドマーク数 +1、extraIndent は item.depth", () => {
+  test("ノード行の indent はランドマーク段数 +1 + セクション内 depth の合算になる", () => {
     const { rows } = toReaderRows(sectionedNodes());
     const paragraph = rows.find((r) => r.kind === "node" && r.node.name === "本文");
-    // main (depth=0) の配下で item.depth=1 → rails=1, extraIndent=1
-    expect(paragraph?.kind === "node" && paragraph.rails).toBe(1);
-    expect(paragraph?.kind === "node" && paragraph.extraIndent).toBe(1);
+    // main (depth=0) の配下で item.depth=1 → indent = 0+1+1 = 2
+    expect(paragraph?.kind === "node" && paragraph.indent).toBe(2);
   });
 
-  test("ネストしたランドマーク行の rails は入れ子段数を反映する", () => {
+  test("ネストしたランドマーク行の indent は入れ子段数を反映する", () => {
+    // banner > navigation > link
     const nested: A11yNode[] = [
       node({ backendNodeId: 1, role: "banner", depth: 0, speechText: "[banner]" }),
       node({
@@ -102,24 +97,20 @@ describe("toReaderRows", () => {
     const bannerSep = rows[0];
     const navSep = rows[1];
     const link = rows[2];
-    // banner (depth=0) が open、nav (depth=1) は lastRail=0 < 1 なので open
-    expect(bannerSep?.kind === "separator" && bannerSep.rails).toBe(0);
-    expect(bannerSep?.kind === "separator" && bannerSep.variant).toBe("open");
-    expect(navSep?.kind === "separator" && navSep.rails).toBe(1);
-    expect(navSep?.kind === "separator" && navSep.variant).toBe("open");
-    // nav 配下の link は rails=2 (banner + nav)
-    expect(link?.kind === "node" && link.rails).toBe(2);
+    expect(bannerSep?.kind === "separator" && bannerSep.indent).toBe(0);
+    expect(navSep?.kind === "separator" && navSep.indent).toBe(1);
+    expect(link?.kind === "node" && link.indent).toBe(2);
   });
 });
 
 describe("ReaderList", () => {
-  test("最初のランドマークは `┌── label`、兄弟は `├── label` で描かれる", () => {
+  test("ランドマーク罫線が `── {label} ──` 形式で描画される", () => {
     const { lastFrame, unmount } = render(
       <ReaderList nodes={sectionedNodes()} cursor={1} viewport={20} />,
     );
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("┌── banner");
-    expect(frame).toContain("├── main");
+    expect(frame).toContain("── banner ──");
+    expect(frame).toContain("── main ──");
     unmount();
   });
 
@@ -134,7 +125,7 @@ describe("ReaderList", () => {
     unmount();
   });
 
-  test("ランドマーク未出現のページでは見出し行もレールも出ない", () => {
+  test("ランドマーク未出現のページでは separator が挟まれない", () => {
     const plain: A11yNode[] = [
       node({
         backendNodeId: 1,
@@ -153,9 +144,7 @@ describe("ReaderList", () => {
     ];
     const { lastFrame, unmount } = render(<ReaderList nodes={plain} cursor={0} viewport={10} />);
     const frame = lastFrame() ?? "";
-    expect(frame).not.toContain("┌──");
-    expect(frame).not.toContain("├──");
-    expect(frame).not.toContain("│ ");
+    expect(frame).not.toContain("──");
     expect(frame).toContain("タイトル");
     expect(frame).toContain("送信");
     unmount();
@@ -168,7 +157,7 @@ describe("ReaderList", () => {
     unmount();
   });
 
-  test("ネストしたランドマークは左レール付きで入れ子段数が視覚化される", () => {
+  test("ネストしたランドマークは罫線もアイテムも段階的にインデントされる", () => {
     const nested: A11yNode[] = [
       node({ backendNodeId: 1, role: "banner", depth: 0, speechText: "[banner]" }),
       node({
@@ -197,18 +186,18 @@ describe("ReaderList", () => {
     const { lastFrame, unmount } = render(<ReaderList nodes={nested} cursor={0} viewport={20} />);
     const frame = lastFrame() ?? "";
     const lines = frame.split("\n");
-    // banner 見出し (rails=0, open)
-    expect(lines[0]).toBe("┌── banner");
-    // ホーム = NodeRow プレフィクス "  " + rail 1 本 "│ " + speechText
-    expect(lines[1]).toBe("  │ [link] ホーム");
-    // navigation 見出し (rails=1, open。lastRail=0 < 1 なので入れ子は open)
-    expect(lines[2]).toBe("│ ┌── navigation「グローバル」");
-    // 概要 = NodeRow プレフィクス "  " + rail 2 本 "│ │ " + speechText
-    expect(lines[3]).toBe("  │ │ [link] 概要");
+    // banner 罫線 (indent=0)
+    expect(lines[0]).toBe("── banner ──");
+    // ホーム = NodeRow プレフィクス "  " + indent 1 段 ("  ") + speechText
+    expect(lines[1]).toBe("    [link] ホーム");
+    // navigation 罫線 (indent=1) → 2 スペース + 罫線
+    expect(lines[2]).toBe("  ── navigation「グローバル」 ──");
+    // 概要 = NodeRow プレフィクス "  " + indent 2 段 ("    ") + speechText
+    expect(lines[3]).toBe("      [link] 概要");
     unmount();
   });
 
-  test("viewport がセクション行数より小さいとき cursor 周辺のみ描画される", () => {
+  test("viewport がセクション行数より小さいとき separator+カーソル周辺のみ描画される", () => {
     const { lastFrame, unmount } = render(
       <ReaderList nodes={sectionedNodes()} cursor={4} viewport={3} />,
     );

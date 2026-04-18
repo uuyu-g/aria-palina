@@ -13,21 +13,16 @@ export interface ReaderListProps {
   viewport: number;
 }
 
-/** 左レール文字と角記号。CLI 側 `formatReaderTextOutput` と揃える。 */
-const RAIL = "│ ";
-const CORNER_OPEN = "┌── ";
-const CORNER_CONTINUE = "├── ";
+/** ランドマーク区切りの罫線幅。CLI 側の `formatReaderTextOutput` と揃える。 */
+const SEPARATOR_DASHES = "──";
 
 /**
  * リーダブルビュー (`view=reader`) のための仮想スクロールリスト。
  *
- * 「左レール半ボックス」方式で章立てを視覚化する:
- * - ランドマーク境界の見出し行 (`┌── banner` / `├── main` 等)
- * - 各行頭に祖先ランドマーク数ぶん `│ ` レールを垂らす
- * - 閉じ線 (`└──`) は出さない (ライブ更新で破綻させないため)
- *
- * cursor は従来通り `A11yNode[]` 上のインデックスで管理され、ナビゲーション
- * 挙動は VirtualList と同一 (separator 行は飛ばされる格好になる)。
+ * 内部的に {@link toReaderRows} でランドマーク区切りの罫線を含んだ行配列を
+ * 構築し、`computeWindow` で可視レンジを算出する。cursor は従来通り
+ * A11yNode 配列のインデックスで管理され、ナビゲーション挙動は VirtualList と
+ * 同一 (separator 行は飛ばされる格好になる)。
  */
 export function ReaderList({ nodes, cursor, viewport }: ReaderListProps) {
   const { rows, cursorRow } = useMemo(() => {
@@ -57,8 +52,7 @@ export function ReaderList({ nodes, cursor, viewport }: ReaderListProps) {
         const globalRow = start + i;
         if (row.kind === "separator") {
           const style = roleTextStyle(row.role);
-          const rails = RAIL.repeat(row.rails);
-          const corner = row.variant === "open" ? CORNER_OPEN : CORNER_CONTINUE;
+          const prefix = "  ".repeat(row.indent);
           return (
             <Text
               key={`sep-${globalRow}`}
@@ -66,18 +60,19 @@ export function ReaderList({ nodes, cursor, viewport }: ReaderListProps) {
               bold={style.bold}
               wrap="truncate-end"
             >
-              {`${rails}${corner}${row.label}`}
+              {`${prefix}${SEPARATOR_DASHES} ${row.label} ${SEPARATOR_DASHES}`}
             </Text>
           );
         }
         const selected = row.nodeIndex === cursor;
-        const indentPrefix = RAIL.repeat(row.rails) + "  ".repeat(row.extraIndent);
+        // NodeRow は `node.depth` をインデントに使うため、合算済みの indent を
+        // 上書きした浅いコピーを渡して reader view 上の階層を表示する。
+        const displayNode: A11yNode = { ...row.node, depth: row.indent };
         return (
           <NodeRow
             key={`${row.node.backendNodeId}-${row.nodeIndex}`}
-            node={row.node}
+            node={displayNode}
             selected={selected}
-            indentPrefix={indentPrefix}
           />
         );
       })}
