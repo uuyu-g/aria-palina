@@ -93,3 +93,17 @@ export async function highlightNode(
 export async function clearHighlight(cdp: ICDPClient): Promise<void> {
   await cdp.send("Overlay.hideHighlight");
 }
+
+/**
+ * 指定した backendNodeId の DOM 要素がビューポート内に入るようにスクロールする。
+ *
+ * TUI カーソルの移動に追従してブラウザ側も同じ要素が見える状態を維持するために
+ * 使う。既に画面内にある要素の場合は CDP 実装側が no-op として扱うため、毎回
+ * 呼び出してもコストは最小限に抑えられる。
+ *
+ * `backendNodeId === 0` の場合は no-op (`highlightNode` と同じポリシー)。
+ */
+export async function scrollIntoView(cdp: ICDPClient, backendNodeId: number): Promise<void> {
+  if (backendNodeId === 0) return;
+  await cdp.send("DOM.scrollIntoViewIfNeeded", { backendNodeId });
+}

@@ -193,6 +193,57 @@ describe("runTui", () => {
     expect(element.props.highlightController).not.toBe(null);
   });
 
+  test("--headed の highlightController.highlight は overlay と scrollIntoViewIfNeeded を両方発行する", async () => {
+    const stderr = createWritableBuffer();
+    const cdpCalls: Array<{ method: string; params: unknown }> = [];
+    const closed = { value: false };
+    const factory: BrowserFactory = async () => ({
+      async newCDPSessionForUrl(): Promise<MinimalCDPSession> {
+        return {
+          async send(method: string, params?: Record<string, unknown>) {
+            cdpCalls.push({ method, params });
+            return {};
+          },
+          on() {},
+          off() {},
+        };
+      },
+      async close() {
+        closed.value = true;
+      },
+    });
+    const captured: { element?: unknown } = {};
+    const nodes = makeNodes(2);
+
+    const code = await runTui(
+      { ...BASE_ARGS, headed: true },
+      {
+        stderr: stderr.stream,
+        isTTY: true,
+        browserFactory: factory,
+        renderer: captureRenderer(captured),
+        extractor: async () => nodes,
+      },
+    );
+
+    expect(code).toBe(0);
+    const element = captured.element as {
+      props: { highlightController: { highlight: (id: number) => void } | null };
+    };
+    const controller = element.props.highlightController;
+    expect(controller).not.toBe(null);
+    controller?.highlight(77);
+    // fire-and-forget された Promise のマイクロタスクを流す
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const highlightCall = cdpCalls.find((c) => c.method === "Overlay.highlightNode");
+    const scrollCall = cdpCalls.find((c) => c.method === "DOM.scrollIntoViewIfNeeded");
+    expect(highlightCall).toBeDefined();
+    expect(scrollCall).toBeDefined();
+    expect((scrollCall!.params as { backendNodeId: number }).backendNodeId).toBe(77);
+  });
+
   test("headless モードでは Overlay/DOM コマンドを一切発行せず controller も null", async () => {
     const stderr = createWritableBuffer();
     const { factory, cdpCalls } = fakeBrowserFactory();
