@@ -52,7 +52,17 @@ export function ReaderList({ nodes, cursor, viewport }: ReaderListProps) {
         const globalRow = start + i;
         if (row.kind === "separator") {
           const style = roleTextStyle(row.role);
-          const prefix = "  ".repeat(row.indent);
+          const indent = "  ".repeat(row.indent);
+          const prefix = row.nodeIndex === cursor ? "> " : "  ";
+          const body = `${prefix}${indent}${SEPARATOR_DASHES} ${row.label} ${SEPARATOR_DASHES}`;
+          if (row.nodeIndex === cursor) {
+            // 選択行はロールスタイルより視認性優先で反転表示する (NodeRow と同じ規約)。
+            return (
+              <Text key={`sep-${globalRow}`} inverse wrap="truncate-end">
+                {body}
+              </Text>
+            );
+          }
           return (
             <Text
               key={`sep-${globalRow}`}
@@ -60,7 +70,7 @@ export function ReaderList({ nodes, cursor, viewport }: ReaderListProps) {
               bold={style.bold}
               wrap="truncate-end"
             >
-              {`${prefix}${SEPARATOR_DASHES} ${row.label} ${SEPARATOR_DASHES}`}
+              {body}
             </Text>
           );
         }

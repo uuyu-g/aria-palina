@@ -56,15 +56,26 @@ describe("toReaderRows", () => {
     expect(third?.kind === "separator" && third.label).toBe("main");
   });
 
-  test("nodeIndexToRow は A11yNode インデックス → row インデックスを返す", () => {
+  test("nodeIndexToRow はアイテムだけでなくランドマーク自身も登録する", () => {
     const nodes = sectionedNodes();
     const { nodeIndexToRow } = toReaderRows(nodes);
+    // nodes[0] = banner ランドマーク → row index 0 (separator 自身)
+    expect(nodeIndexToRow.get(0)).toBe(0);
     // nodes[1] = ロゴ heading → row index 1 (banner separator の次)
     expect(nodeIndexToRow.get(1)).toBe(1);
-    // nodes[2] = main ランドマーク → 除外 (アイテムではない)
-    expect(nodeIndexToRow.has(2)).toBe(false);
+    // nodes[2] = main ランドマーク → row index 2 (2 つ目の separator)
+    expect(nodeIndexToRow.get(2)).toBe(2);
     // nodes[4] = paragraph 本文 → row index 4
     expect(nodeIndexToRow.get(4)).toBe(4);
+  });
+
+  test("separator 行は自分のランドマーク A11yNode インデックスを nodeIndex として持つ", () => {
+    const nodes = sectionedNodes();
+    const { rows } = toReaderRows(nodes);
+    const bannerSep = rows[0];
+    const mainSep = rows[2];
+    expect(bannerSep?.kind === "separator" && bannerSep.nodeIndex).toBe(0);
+    expect(mainSep?.kind === "separator" && mainSep.nodeIndex).toBe(2);
   });
 
   test("ノード行の indent はランドマーク段数 +1 + セクション内 depth の合算になる", () => {
@@ -125,6 +136,19 @@ describe("ReaderList", () => {
     unmount();
   });
 
+  test("カーソルがランドマーク位置にあるときは separator 行が選択強調される", () => {
+    // sectionedNodes の nodes[2] は main ランドマーク
+    const { lastFrame, unmount } = render(
+      <ReaderList nodes={sectionedNodes()} cursor={2} viewport={20} />,
+    );
+    const frame = lastFrame() ?? "";
+    const selectedLines = frame.split("\n").filter((l) => l.includes("> "));
+    expect(selectedLines.length).toBe(1);
+    expect(selectedLines[0]).toContain("main");
+    expect(selectedLines[0]).toContain("──");
+    unmount();
+  });
+
   test("ランドマーク未出現のページでは separator が挟まれない", () => {
     const plain: A11yNode[] = [
       node({
@@ -182,17 +206,17 @@ describe("ReaderList", () => {
         speechText: "[link] 概要",
       }),
     ];
-    // cursor はランドマーク (items に含まれない) を指すため、ノード行に選択強調は付かない
-    const { lastFrame, unmount } = render(<ReaderList nodes={nested} cursor={0} viewport={20} />);
+    // cursor=1 (ホーム) を指す。banner/navigation の separator は非選択のまま
+    const { lastFrame, unmount } = render(<ReaderList nodes={nested} cursor={1} viewport={20} />);
     const frame = lastFrame() ?? "";
     const lines = frame.split("\n");
-    // banner 罫線 (indent=0)
-    expect(lines[0]).toBe("── banner ──");
-    // ホーム = NodeRow プレフィクス "  " + indent 1 段 ("  ") + speechText
-    expect(lines[1]).toBe("    [link] ホーム");
-    // navigation 罫線 (indent=1) → 2 スペース + 罫線
-    expect(lines[2]).toBe("  ── navigation「グローバル」 ──");
-    // 概要 = NodeRow プレフィクス "  " + indent 2 段 ("    ") + speechText
+    // banner 罫線 (indent=0, 非選択のため "  " プレフィクス付き)
+    expect(lines[0]).toBe("  ── banner ──");
+    // ホーム (選択中) = NodeRow プレフィクス "> " + indent 1 段 ("  ") + speechText
+    expect(lines[1]).toBe(">   [link] ホーム");
+    // navigation 罫線 (indent=1, 非選択) → "  " プレフィクス + indent 1 段 + 罫線
+    expect(lines[2]).toBe("    ── navigation「グローバル」 ──");
+    // 概要 (非選択) = NodeRow プレフィクス "  " + indent 2 段 ("    ") + speechText
     expect(lines[3]).toBe("      [link] 概要");
     unmount();
   });
