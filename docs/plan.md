@@ -28,6 +28,7 @@
 | 4 | Ink TUI 基盤とパフォーマンス最適化 | ✅ Done | [phase-4](./progress/phase-4.md) |
 | 5 | デュアルナビゲーション実装 (TUI) | ✅ Done | [phase-5](./progress/phase-5.md) |
 | 6 | Matrix View (Headed モード同期) | ✅ Done | [phase-6](./progress/phase-6.md) |
+| 6.5 | リーダブルビュー (中間表現 + レンダラー切替) | ⏳ Pending | — |
 | 7 | Chrome Extension (DevTools Panel) | ⏳ Pending | — |
 | 8 | Test Utilities (BDD) | ⏳ Pending | — |
 | 9 | 統合バイナリ `palina` の公開 | ⏳ Pending | — |
@@ -43,6 +44,42 @@
 | 非同期画面更新への追従 (ライブ AX 更新 / aria-live 通知) | [async-update](./progress/async-update.md) |
 
 ## 次にやること (Pending フェーズ)
+
+### Phase 6.5: リーダブルビュー (中間表現 + レンダラー切替)
+
+> DD §4 ロードマップの差し込みフェーズ。DD 本体は不変なので本ファイル側に詳細を残す。
+
+**価値提案**: 「スクリーンリーダーで世界がどう見えているか」を晴眼者がそのまま
+俯瞰できるようにする。CDP 生ツリーをそのまま深くインデントするより、ランドマーク
+と見出しを章立てとして並べ、構造把握を妨げるラッパーノードを潰した方が、晴眼者の
+脳内モデル (= 目次的なページ構造) と一致しやすい。
+
+**スコープ**:
+
+- `@aria-palina/core` に**ビュー中間表現**を導入。
+  - `buildReaderView(nodes: A11yNode[]): ReaderSection[]` のような純粋関数。
+  - `ReaderSection` はランドマーク (`banner` / `nav` / `main` / `complementary` /
+    `contentinfo` / `region` 等) を境界とし、配下に heading 階層と平坦化された
+    item 列を持つイメージ。
+  - 折り畳み対象ロールの初期セット: `generic` / `none` / `presentation` /
+    name 無しの単独子ラッパー。実サイトで試しながらブラッシュアップしていく。
+- CLI / TUI に**組み込みレンダラー切替**を追加。
+  - `reader` (新デフォルト) / `raw` (現行の素朴な深いインデント表示)。
+  - `--view=reader|raw` 相当のフラグを追加 (短縮形は実装時に検討)。
+- TUI のランドマーク区切りは**罫線** (例: `── main ──`) として描画する。
+- 既存のキーバインド (`h` / `H` 見出しジャンプ, `D` ランドマークジャンプ等) が
+  新表示でも自然に効くか確認し、必要なら微調整する。
+
+**スコープ外 (将来検討)**:
+
+- `Renderer` インターフェースを公開しての**外部プラグイン化** (案 3 相当)。
+  本フェーズの中間表現があれば後から `Renderer` I/F でラップするだけで上乗せ
+  できる設計を保つ。
+- ユーザー設定可能な折り畳みロールリスト (`--collapse-roles=...` 等)。
+
+**Phase 7 との関係**: Chrome Extension でも同じビューが欲しくなるため、変換ロジックは
+必ず Core 側 (`buildReaderView`) に置き、Extension パッケージ追加時にそのまま再利用
+できるようにする。
 
 ### Phase 7: Chrome Extension (DevTools Panel)
 
