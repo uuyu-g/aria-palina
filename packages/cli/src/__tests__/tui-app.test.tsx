@@ -963,4 +963,59 @@ describe("App highlight controller", () => {
     expect(frame).toContain("エラー発生");
     unmount();
   });
+
+  test("view='reader' (既定) ではランドマーク区切りの罫線が描画される", async () => {
+    const nodes: A11yNode[] = [
+      makeNode({
+        backendNodeId: 1,
+        role: "main",
+        depth: 0,
+        name: "メイン",
+        speechText: "[main] メイン",
+      }),
+      makeNode({
+        backendNodeId: 2,
+        role: "heading",
+        depth: 1,
+        name: "タイトル",
+        speechText: "[heading1] タイトル",
+      }),
+    ];
+    const { lastFrame, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} />,
+    );
+    await waitFrames();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("── main「メイン」 ──");
+    expect(frame).toContain("タイトル");
+    unmount();
+  });
+
+  test("view='raw' では罫線を出さず、全ノードを depth 順で平坦に描画する", async () => {
+    const nodes: A11yNode[] = [
+      makeNode({
+        backendNodeId: 1,
+        role: "main",
+        depth: 0,
+        name: "メイン",
+        speechText: "[main] メイン",
+      }),
+      makeNode({
+        backendNodeId: 2,
+        role: "heading",
+        depth: 1,
+        name: "タイトル",
+        speechText: "[heading1] タイトル",
+      }),
+    ];
+    const { lastFrame, unmount } = render(
+      <App url="https://example.com" nodes={nodes} viewportOverride={10} view="raw" />,
+    );
+    await waitFrames();
+    const frame = lastFrame() ?? "";
+    expect(frame).not.toContain("──");
+    expect(frame).toContain("[main] メイン");
+    expect(frame).toContain("タイトル");
+    unmount();
+  });
 });

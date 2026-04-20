@@ -43,6 +43,12 @@ export interface TuiArgs {
   delay?: number;
   /** DOM 変化での自動再取得を有効にするか。@default true */
   live?: boolean;
+  /**
+   * リスト描画のビュー種別。
+   * - `"reader"` (既定) — ランドマーク区切りの章立て表示
+   * - `"raw"` — 現行の深いインデント表示
+   */
+  view?: "reader" | "raw";
 }
 
 export interface BrowserHandle {
@@ -410,6 +416,7 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
       highlightController,
       actionBridge,
       headless: !args.headed,
+      view: args.view ?? "reader",
     });
 
     const instance = await renderer(element, {

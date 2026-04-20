@@ -35,3 +35,4 @@ export {
   type RGBA,
 } from "./highlight.js";
 export { clickNode, focusNode } from "./actions.js";
+export { LANDMARK_ROLES, readerBaseDepth, readerSectionLabel } from "./reader-view.js";

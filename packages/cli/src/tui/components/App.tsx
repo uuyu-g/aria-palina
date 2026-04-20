@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ActionBridge, LiveBridge, LiveUpdate } from "../run.js";
 import { useHighlight, type HighlightController } from "../use-highlight.js";
 import { FilterModal } from "./FilterModal.js";
+import { ReaderList } from "./ReaderList.js";
 import { VirtualList } from "./VirtualList.js";
 
 export interface AppProps {
@@ -43,6 +44,12 @@ export interface AppProps {
    * 警告を 1 度だけフッターに表示する。
    */
   headless?: boolean;
+  /**
+   * リスト描画のビューモード。
+   * - `"reader"` (既定) — ランドマーク区切りの章立て (`ReaderList`)
+   * - `"raw"` — CDP 生ツリー順の深いインデント表示 (`VirtualList`)
+   */
+  view?: "reader" | "raw";
 }
 
 const HEADER_LINES = 1;
@@ -104,6 +111,7 @@ export function App({
   liveBridge = null,
   actionBridge = null,
   headless = false,
+  view = "reader",
 }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -425,7 +433,11 @@ export function App({
         />
       ) : (
         <>
-          <VirtualList nodes={nodes} cursor={cursor} viewport={viewport} />
+          {view === "reader" ? (
+            <ReaderList nodes={nodes} cursor={cursor} viewport={viewport} />
+          ) : (
+            <VirtualList nodes={nodes} cursor={cursor} viewport={viewport} />
+          )}
           <Box>
             <Text dimColor>{FOOTER_NORMAL}</Text>
           </Box>

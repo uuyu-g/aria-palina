@@ -9,7 +9,7 @@ import {
 } from "@aria-palina/core";
 import type { CliArgs } from "./args.js";
 import { parseCliArgs } from "./args.js";
-import { formatJsonOutput, formatTextOutput } from "./formatter.js";
+import { formatJsonOutput, formatReaderTextOutput, formatTextOutput } from "./formatter.js";
 import type { MinimalCDPSession } from "./playwright-cdp-adapter.js";
 import { adaptCDPSession } from "./playwright-cdp-adapter.js";
 
@@ -170,7 +170,9 @@ export async function runCli(argv: readonly string[], io?: Partial<RunIO>): Prom
     const output =
       args.format === "json"
         ? formatJsonOutput(outputNodes)
-        : formatTextOutput(outputNodes, { indent, color });
+        : args.view === "reader"
+          ? formatReaderTextOutput(outputNodes, { indent, color })
+          : formatTextOutput(outputNodes, { indent, color });
 
     stdout.write(output + "\n");
     return 0;

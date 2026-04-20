@@ -10,6 +10,7 @@ describe("parseCliArgs", () => {
         url: "https://example.com",
         headed: false,
         format: "text",
+        view: "reader",
         role: undefined,
         indent: undefined,
         color: undefined,
@@ -412,6 +413,31 @@ describe("parseCliArgs", () => {
       ok: false,
       exitCode: 2,
       message: expect.stringContaining("同時に指定できません"),
+    });
+  });
+
+  test("view のデフォルトは reader", () => {
+    const result = parseCliArgs(["-u", "https://x.com"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ view: "reader" }),
+    });
+  });
+
+  test("--view raw が view:raw に反映される", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--view", "raw"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ view: "raw" }),
+    });
+  });
+
+  test("不正な --view 値はエラーを返す", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--view", "flat"]);
+    expect(result).toEqual({
+      ok: false,
+      exitCode: 2,
+      message: expect.stringContaining("flat"),
     });
   });
 });

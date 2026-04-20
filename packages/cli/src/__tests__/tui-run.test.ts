@@ -454,6 +454,45 @@ describe("runTui", () => {
     await runPromise;
   });
 
+  test("args.view は App プロパティとして伝搬する (既定は reader)", async () => {
+    const stderr = createWritableBuffer();
+    const { factory } = fakeBrowserFactory();
+    const captured: { element?: unknown } = {};
+    const nodes = makeNodes(2);
+
+    await runTui(BASE_ARGS, {
+      stderr: stderr.stream,
+      isTTY: true,
+      browserFactory: factory,
+      renderer: captureRenderer(captured),
+      extractor: async () => nodes,
+    });
+
+    const element = captured.element as { props: { view: "reader" | "raw" } };
+    expect(element.props.view).toBe("reader");
+  });
+
+  test("args.view='raw' を指定すると App に raw として伝搬する", async () => {
+    const stderr = createWritableBuffer();
+    const { factory } = fakeBrowserFactory();
+    const captured: { element?: unknown } = {};
+    const nodes = makeNodes(2);
+
+    await runTui(
+      { ...BASE_ARGS, view: "raw" },
+      {
+        stderr: stderr.stream,
+        isTTY: true,
+        browserFactory: factory,
+        renderer: captureRenderer(captured),
+        extractor: async () => nodes,
+      },
+    );
+
+    const element = captured.element as { props: { view: "reader" | "raw" } };
+    expect(element.props.view).toBe("raw");
+  });
+
   test("Chromium 未インストールのエラーは日本語で案内する", async () => {
     const stderr = createWritableBuffer();
     const factory: BrowserFactory = async () => {

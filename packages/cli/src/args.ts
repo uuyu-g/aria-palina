@@ -8,6 +8,9 @@ const HELP_TEXT = `palina — ページのアクセシビリティツリーを N
 オプション:
   -u, --url <URL>    対象 URL (位置引数でも可)
   -f, --format <fmt> 出力形式: "text" (デフォルト) | "json"
+      --view <mode>  ビューの種類: "reader" (デフォルト) | "raw"
+                     reader はランドマーク区切りの章立てで表示し、
+                     raw は CDP 生ツリーをそのまま深くインデントして表示する。
   -r, --role <roles> 指定ロールのみ出力 (カンマ区切り, 例: heading,landmark)
       --indent       インデント出力を強制 (デフォルト: TTY なら有効)
       --no-indent    インデントなし出力を強制
@@ -42,6 +45,7 @@ export interface CliArgs {
   url: string;
   headed: boolean;
   format: "text" | "json";
+  view: "reader" | "raw";
   role: string[] | undefined;
   indent: boolean | undefined;
   color: boolean | undefined;
@@ -85,6 +89,7 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
         url: { type: "string", short: "u" },
         headed: { type: "boolean", default: false },
         format: { type: "string", short: "f", default: "text" },
+        view: { type: "string", default: "reader" },
         role: { type: "string", short: "r" },
         indent: { type: "boolean" },
         "no-indent": { type: "boolean" },
@@ -146,6 +151,15 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
       ok: false,
       exitCode: 2,
       message: `不正な --format 値: "${format}"。"text" または "json" を指定してください。`,
+    };
+  }
+
+  const view = values.view as string;
+  if (view !== "reader" && view !== "raw") {
+    return {
+      ok: false,
+      exitCode: 2,
+      message: `不正な --view 値: "${view}"。"reader" または "raw" を指定してください。`,
     };
   }
 
@@ -261,6 +275,7 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
       url,
       headed: (values.headed as boolean) ?? false,
       format,
+      view,
       role: role?.length ? role : undefined,
       indent,
       color,
