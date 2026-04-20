@@ -67,6 +67,54 @@ describe("formatTextOutput", () => {
     });
     expect(result).toContain("\u001b[");
   });
+
+  test("inlineSegments を持つノードは親色とセグメント色が交互に切り替わる", () => {
+    const speechText = "[paragraph] これは リンク と 画像 の行";
+    const linkStart = speechText.indexOf("リンク");
+    const imgStart = speechText.indexOf("画像");
+    const nodes: A11yNode[] = [
+      {
+        backendNodeId: 1,
+        role: "paragraph",
+        name: "これは リンク と 画像 の行",
+        depth: 0,
+        properties: {},
+        state: {},
+        speechText,
+        isFocusable: false,
+        isIgnored: false,
+        inlineSegments: [
+          {
+            role: "link",
+            name: "リンク",
+            backendNodeId: 11,
+            isFocusable: true,
+            state: {},
+            properties: {},
+            start: linkStart,
+            end: linkStart + "リンク".length,
+          },
+          {
+            role: "img",
+            name: "画像",
+            backendNodeId: 12,
+            isFocusable: false,
+            state: {},
+            properties: {},
+            start: imgStart,
+            end: imgStart + "画像".length,
+          },
+        ],
+      },
+    ];
+    const result = formatTextOutput(nodes, { indent: false, color: true });
+    // link の color = blue (\u001b[34m), img の color = gray (\u001b[90m)
+    expect(result).toContain("\u001b[34mリンク\u001b[0m");
+    expect(result).toContain("\u001b[90m画像\u001b[0m");
+    // 非セグメント領域はリセット後にも残るテキストが含まれる
+    expect(result).toContain("これは ");
+    expect(result).toContain(" と ");
+  });
 });
 
 describe("formatJsonOutput", () => {

@@ -1,7 +1,14 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import { cycleKind, filterByKind, findNext, matchesKind } from "../node-kind.js";
-import type { A11yNode } from "../types.js";
+import {
+  cycleKind,
+  filterByKind,
+  findNext,
+  findNextTarget,
+  listInteractiveTargets,
+  matchesKind,
+} from "../node-kind.js";
+import type { A11yNode, InlineSegment } from "../types.js";
 
 function makeNode(partial: Partial<A11yNode> & Pick<A11yNode, "role">): A11yNode {
   return {
@@ -127,6 +134,118 @@ describe("filterByKind", () => {
   test("disabled なフォーカス可能要素は interactive から除外される", () => {
     const interactives = filterByKind(nodes, "interactive");
     expect(interactives.map((n) => n.name)).toEqual(["btn1"]);
+  });
+});
+
+function makeSegment(partial: Partial<InlineSegment> & Pick<InlineSegment, "role">): InlineSegment {
+  return {
+    name: "",
+    backendNodeId: 0,
+    isFocusable: false,
+    state: {},
+    properties: {},
+    start: 0,
+    end: 0,
+    ...partial,
+  };
+}
+
+describe("listInteractiveTargets", () => {
+  test("行自身のインタラクティブ要素とセグメントの両方を表示順で列挙する", () => {
+    const nodes: A11yNode[] = [
+      makeNode({
+        role: "paragraph",
+        name: "Hello リンク と 画像",
+        speechText: "[paragraph] Hello リンク と 画像",
+        inlineSegments: [
+          makeSegment({
+            role: "link",
+            name: "リンク",
+            backendNodeId: 11,
+            isFocusable: true,
+          }),
+          // img は focusable ではないので巡回対象外
+          makeSegment({ role: "img", name: "画像", backendNodeId: 12, isFocusable: false }),
+        ],
+      }),
+      makeNode({ role: "button", isFocusable: true, backendNodeId: 20, name: "送信" }),
+    ];
+    const targets = listInteractiveTargets(nodes);
+    expect(targets).toEqual([
+      { rowIndex: 0, segmentIndex: 0, backendNodeId: 11, role: "link", name: "リンク" },
+      { rowIndex: 1, segmentIndex: null, backendNodeId: 20, role: "button", name: "送信" },
+    ]);
+  });
+
+  test("disabled なセグメントは除外される", () => {
+    const nodes: A11yNode[] = [
+      makeNode({
+        role: "paragraph",
+        inlineSegments: [
+          makeSegment({
+            role: "link",
+            backendNodeId: 1,
+            isFocusable: true,
+            state: { disabled: true },
+          }),
+        ],
+      }),
+    ];
+    expect(listInteractiveTargets(nodes)).toEqual([]);
+  });
+
+  test("backendNodeId が 0 のセグメントは除外される", () => {
+    const nodes: A11yNode[] = [
+      makeNode({
+        role: "paragraph",
+        inlineSegments: [makeSegment({ role: "link", backendNodeId: 0, isFocusable: true })],
+      }),
+    ];
+    expect(listInteractiveTargets(nodes)).toEqual([]);
+  });
+});
+
+describe("findNextTarget", () => {
+  const nodes: A11yNode[] = [
+    makeNode({ role: "button", isFocusable: true, backendNodeId: 1, name: "btn1" }),
+    makeNode({
+      role: "paragraph",
+      name: "Hello リンクA と リンクB",
+      speechText: "[paragraph] Hello リンクA と リンクB",
+      inlineSegments: [
+        makeSegment({ role: "link", name: "リンクA", backendNodeId: 10, isFocusable: true }),
+        makeSegment({ role: "link", name: "リンクB", backendNodeId: 11, isFocusable: true }),
+      ],
+    }),
+    makeNode({ role: "button", isFocusable: true, backendNodeId: 2, name: "btn2" }),
+  ];
+
+  test("行カーソルからセグメントへ順方向に進む", () => {
+    const t = findNextTarget(nodes, { rowIndex: 0, segmentIndex: null }, 1);
+    expect(t).toMatchObject({ rowIndex: 1, segmentIndex: 0 });
+  });
+
+  test("同一行の次のセグメントへ進む", () => {
+    const t = findNextTarget(nodes, { rowIndex: 1, segmentIndex: 0 }, 1);
+    expect(t).toMatchObject({ rowIndex: 1, segmentIndex: 1 });
+  });
+
+  test("最終セグメントの次は次行のインタラクティブ要素", () => {
+    const t = findNextTarget(nodes, { rowIndex: 1, segmentIndex: 1 }, 1);
+    expect(t).toMatchObject({ rowIndex: 2, segmentIndex: null });
+  });
+
+  test("逆方向でセグメントから前のセグメントへ戻る", () => {
+    const t = findNextTarget(nodes, { rowIndex: 1, segmentIndex: 1 }, -1);
+    expect(t).toMatchObject({ rowIndex: 1, segmentIndex: 0 });
+  });
+
+  test("末尾を超えたら null を返す", () => {
+    expect(findNextTarget(nodes, { rowIndex: 2, segmentIndex: null }, 1)).toBeNull();
+  });
+
+  test("先頭より手前も null を返す", () => {
+    expect(findNextTarget(nodes, { rowIndex: 0, segmentIndex: null }, -1)).toBeNull();
   });
 });
 

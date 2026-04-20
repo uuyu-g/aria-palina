@@ -807,6 +807,128 @@ describe("App highlight controller", () => {
     unmount();
   });
 
+  test("Tab で圧縮行のインタラクティブセグメントへフォーカスが移る", async () => {
+    const speechText = "[paragraph] これは リンク と 画像 の行";
+    const linkStart = speechText.indexOf("リンク");
+    const nodes: A11yNode[] = [
+      makeNode({
+        backendNodeId: 100,
+        role: "paragraph",
+        name: "これは リンク と 画像 の行",
+        speechText,
+        inlineSegments: [
+          {
+            role: "link",
+            name: "リンク",
+            backendNodeId: 201,
+            isFocusable: true,
+            state: {},
+            properties: {},
+            start: linkStart,
+            end: linkStart + "リンク".length,
+          },
+          {
+            role: "img",
+            name: "画像",
+            backendNodeId: 202,
+            isFocusable: false,
+            state: {},
+            properties: {},
+            start: speechText.indexOf("画像"),
+            end: speechText.indexOf("画像") + "画像".length,
+          },
+        ],
+      }),
+      makeNode({
+        backendNodeId: 300,
+        role: "button",
+        isFocusable: true,
+        name: "送信",
+        speechText: "[button] 送信",
+      }),
+    ];
+    const clicks: A11yNode[] = [];
+    const actionBridge: import("../tui/run.js").ActionBridge = {
+      async click(node) {
+        clicks.push(node);
+      },
+    };
+    const { stdin, lastFrame, unmount } = render(
+      <App url="https://x.com" nodes={nodes} viewportOverride={10} actionBridge={actionBridge} />,
+    );
+    await waitFrames();
+    // Tab 1 回目: cursor=0 に留まりつつ link セグメントにフォーカス。
+    stdin.write("\t");
+    await waitFrames();
+    // Enter でセグメントの backendNodeId に対してクリックが発火。
+    stdin.write("\r");
+    await waitFrames();
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0]?.backendNodeId).toBe(201);
+    expect(clicks[0]?.role).toBe("link");
+    expect(lastFrame() ?? "").toContain("✱ クリック: リンク");
+
+    // Tab 2 回目: img は非 interactive なので飛ばして button (行) へ。
+    stdin.write("\t");
+    await waitFrames();
+    stdin.write("\r");
+    await waitFrames();
+    expect(clicks).toHaveLength(2);
+    expect(clicks[1]?.backendNodeId).toBe(300);
+    unmount();
+  });
+
+  test("方向キーで行が変わるとセグメントフォーカスは解除される", async () => {
+    const speechText = "[paragraph] A リンク B";
+    const linkStart = speechText.indexOf("リンク");
+    const nodes: A11yNode[] = [
+      makeNode({
+        backendNodeId: 100,
+        role: "paragraph",
+        name: "A リンク B",
+        speechText,
+        inlineSegments: [
+          {
+            role: "link",
+            name: "リンク",
+            backendNodeId: 201,
+            isFocusable: true,
+            state: {},
+            properties: {},
+            start: linkStart,
+            end: linkStart + "リンク".length,
+          },
+        ],
+      }),
+      makeNode({
+        backendNodeId: 300,
+        role: "button",
+        isFocusable: true,
+        name: "送信",
+        speechText: "[button] 送信",
+      }),
+    ];
+    const clicks: A11yNode[] = [];
+    const actionBridge: import("../tui/run.js").ActionBridge = {
+      async click(node) {
+        clicks.push(node);
+      },
+    };
+    const { stdin, unmount } = render(
+      <App url="https://x.com" nodes={nodes} viewportOverride={10} actionBridge={actionBridge} />,
+    );
+    await waitFrames();
+    stdin.write("\t"); // セグメントへフォーカス
+    await waitFrames();
+    stdin.write("\u001B[B"); // ↓ で行を下げる → セグメント解除
+    await waitFrames();
+    stdin.write("\r"); // button 行にいるので button にクリック
+    await waitFrames();
+    expect(clicks).toHaveLength(1);
+    expect(clicks[0]?.backendNodeId).toBe(300);
+    unmount();
+  });
+
   test("actionBridge 未指定のとき Enter / Space は no-op", async () => {
     const nodes = makeMixedNodes();
     const { stdin, lastFrame, unmount } = render(

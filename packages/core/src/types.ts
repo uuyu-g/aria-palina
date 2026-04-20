@@ -39,4 +39,49 @@ export interface A11yNode {
 
   /** `role="presentation"` や `aria-hidden="true"` 等で読み上げから除外されているか。 */
   isIgnored: boolean;
+
+  /**
+   * 親行に吸収されたインライン子要素の範囲情報。
+   *
+   * `<p>これは <a>リンク</a> と <img alt="画像"/> の行</p>` のようなインライン
+   * 要素を親 (paragraph) の 1 行に圧縮する際、各子要素が `speechText` のどの
+   * 位置にあるかを記録する。TUI は `start`/`end` で色分け・セグメントカーソル
+   * を行い、CLI は ANSI エスケープを挿入して範囲を可視化する。
+   *
+   * 配列の順序は `speechText` 内での出現順。`undefined` のときは吸収が行われ
+   * ていないことを意味する (インライン子が無い / 条件不一致)。
+   */
+  inlineSegments?: InlineSegment[];
+}
+
+/**
+ * 親行に吸収されたインライン子要素 1 つ分の情報。
+ *
+ * `start`/`end` は親の `speechText` 内の文字オフセット (UTF-16 code unit) で、
+ * `speechText.slice(start, end)` が子の `name` と等しくなるよう調整済み。
+ */
+export interface InlineSegment {
+  /** 子要素の ARIA ロール。TUI/CLI の色付けキーとして使う。 */
+  role: string;
+
+  /** 子要素のアクセシブルネーム (= `speechText.slice(start, end)`)。 */
+  name: string;
+
+  /** 詳細パネルや操作発火 (click / focus) に使う DOM backendNodeId。 */
+  backendNodeId: number;
+
+  /** `Tab` でのフォーカス対象か。親行がフォーカス不能でもセグメントは可能。 */
+  isFocusable: boolean;
+
+  /** 子要素固有の状態 (disabled / checked ...)。 */
+  state: Record<string, boolean | string>;
+
+  /** 子要素の構造系プロパティ (heading level 等、現状ほぼ未使用)。 */
+  properties: Record<string, unknown>;
+
+  /** 親 `speechText` 内の開始オフセット (inclusive)。 */
+  start: number;
+
+  /** 親 `speechText` 内の終了オフセット (exclusive)。 */
+  end: number;
 }

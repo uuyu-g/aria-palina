@@ -1,5 +1,5 @@
 export type { ICDPClient } from "./cdp-client.js";
-export type { A11yNode } from "./types.js";
+export type { A11yNode, InlineSegment } from "./types.js";
 export type { GetFullAXTreeResult, RawAXNode, RawAXProperty, RawAXValue } from "./ax-protocol.js";
 export { flattenAXTree, type FlattenOptions } from "./flatten.js";
 export { buildSpeechText, type SpeechInput } from "./speech.js";
@@ -24,7 +24,16 @@ export {
   waitForSelector,
   type WaitConditionOptions,
 } from "./wait-conditions.js";
-export { cycleKind, filterByKind, findNext, matchesKind, type NodeKind } from "./node-kind.js";
+export {
+  cycleKind,
+  filterByKind,
+  findNext,
+  findNextTarget,
+  listInteractiveTargets,
+  matchesKind,
+  type InteractiveTarget,
+  type NodeKind,
+} from "./node-kind.js";
 export {
   clearHighlight,
   disableOverlay,

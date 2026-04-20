@@ -44,6 +44,46 @@ describe("VirtualList", () => {
     unmount();
   });
 
+  test("inlineSegments を持つ行も speechText のテキスト全体が 1 行に収まる", () => {
+    // セグメント単位で Text が分割されても、表示上は 1 行にレンダリングされる
+    // ことを確認する (分割が改行を生まない)。
+    const speechText = "[paragraph] これは リンク の行";
+    const linkStart = speechText.indexOf("リンク");
+    const nodes = [
+      {
+        backendNodeId: 1,
+        role: "paragraph",
+        name: "これは リンク の行",
+        depth: 0,
+        properties: {},
+        state: {},
+        speechText,
+        isFocusable: false,
+        isIgnored: false,
+        inlineSegments: [
+          {
+            role: "link",
+            name: "リンク",
+            backendNodeId: 11,
+            isFocusable: true,
+            state: {},
+            properties: {},
+            start: linkStart,
+            end: linkStart + "リンク".length,
+          },
+        ],
+      },
+    ];
+    const { lastFrame, unmount } = render(<VirtualList nodes={nodes} cursor={1} viewport={5} />);
+    const frame = lastFrame() ?? "";
+    const textLines = frame.split("\n").filter((l) => l.length > 0);
+    expect(textLines).toHaveLength(1);
+    expect(textLines[0]).toContain("これは");
+    expect(textLines[0]).toContain("リンク");
+    expect(textLines[0]).toContain("の行");
+    unmount();
+  });
+
   test("depth に応じてインデントが入る", () => {
     const nodes = [
       {

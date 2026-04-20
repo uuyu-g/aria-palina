@@ -8,9 +8,15 @@ export interface VirtualListProps {
   nodes: A11yNode[];
   cursor: number;
   viewport: number;
+  /**
+   * 選択行内でアクティブなセグメントのインデックス。行全体が選択対象の
+   * ときは `null`。Tab キーが押されてインライン子にフォーカスしたとき
+   * だけ数値になる。
+   */
+  activeSegment?: number | null;
 }
 
-export function VirtualList({ nodes, cursor, viewport }: VirtualListProps) {
+export function VirtualList({ nodes, cursor, viewport, activeSegment = null }: VirtualListProps) {
   const { start, end } = useMemo(
     () => computeWindow({ total: nodes.length, cursor, viewport }),
     [nodes.length, cursor, viewport],
@@ -30,11 +36,13 @@ export function VirtualList({ nodes, cursor, viewport }: VirtualListProps) {
     <Box flexDirection="column">
       {visible.map((node, i) => {
         const globalIndex = start + i;
+        const selected = globalIndex === cursor;
         return (
           <NodeRow
             key={`${node.backendNodeId}-${globalIndex}`}
             node={node}
-            selected={globalIndex === cursor}
+            selected={selected}
+            activeSegment={selected ? activeSegment : null}
           />
         );
       })}
