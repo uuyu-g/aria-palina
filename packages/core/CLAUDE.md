@@ -36,12 +36,11 @@
 2. **変更前 (Before)** の出力を**実行順どおりに 1 行 1 ノード**で並べる。
 3. **変更後 (After)** の出力を同じノード順で並べる。
 4. 差分が分かりやすいよう、変わった行に `←` 等のマークを付けるか、
-   ` ```diff ` フェンスで `-` / `+` を使う。
+   `diff` コードブロックで `-` / `+` を使う。
 
-#### ✅ 良い例 (`buildSpeechText` の状態語彙を変更した場合)
+### ✅ 良い例 (`buildSpeechText` の状態語彙を変更した場合)
 
-````md
-入力: `<button disabled>送信</button>` を含む下記 AX ツリー
+入力となる AX ツリー (`<button disabled>送信</button>` を含む):
 
 ```ts
 [
@@ -50,7 +49,6 @@
   { role: "link", name: "ヘルプ" },
 ];
 ```
-````
 
 Before (DFS 順):
 
@@ -68,37 +66,30 @@ After (DFS 順):
 [link] ヘルプ
 ```
 
-````
+### ✅ 良い例 (`A11yNode` フィールド追加 — `flattenAXTree` の出力)
 
-#### ✅ 良い例 (`A11yNode` フィールド追加 — `flattenAXTree` の出力)
-
-```md
 Before (`A11yNode[]` JSON、配列順):
 
 ```json
 [
-  { "role": "main",   "name": "",     "depth": 0 },
+  { "role": "main", "name": "", "depth": 0 },
   { "role": "button", "name": "送信", "depth": 1 }
 ]
-````
+```
 
-After (`A11yNode[]` JSON、配列順):
+After (`A11yNode[]` JSON、配列順 — `indexInParent` を追加):
 
 ```json
 [
-  { "role": "main",   "name": "",     "depth": 0, "indexInParent": 0 },
+  { "role": "main", "name": "", "depth": 0, "indexInParent": 0 },
   { "role": "button", "name": "送信", "depth": 1, "indexInParent": 0 }
 ]
 ```
 
-````
+### ❌ 悪い例 (順序が崩れている / 抽象的すぎる)
 
-#### ❌ 悪い例 (順序が崩れている / 抽象的すぎる)
-
-```md
-- speechText が「より自然な日本語」になりました。
-- depth の計算式を見直しました。
-````
+- 「speechText がより自然な日本語になりました」
+- 「depth の計算式を見直しました」
 
 → どのノードがどう変わるのか、レビュアーが実装を読まないと分からないため不可。
 
