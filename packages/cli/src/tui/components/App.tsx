@@ -8,6 +8,7 @@ import {
 } from "@aria-palina/core";
 import { Box, Text, useApp, useInput, useStdout, type Key } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { KIND_LABEL } from "../kind-label.js";
 import type { ActionBridge, LiveBridge, LiveUpdate } from "../run.js";
 import { useHighlight, type HighlightController } from "../use-highlight.js";
 import { FilterModal } from "./FilterModal.js";
@@ -52,12 +53,6 @@ const MIN_VIEWPORT = 3;
 
 /** モーダル内のボーダー・タイトル・ヘルプ行で消費される行数。 */
 const MODAL_CHROME_LINES = 4; // border top + title + help + border bottom
-
-const KIND_LABEL: Readonly<Record<NodeKind, string>> = {
-  heading: "見出し",
-  landmark: "ランドマーク",
-  interactive: "インタラクティブ",
-};
 
 const FOOTER_NORMAL =
   "↑/↓ 移動 Tab フォーカス h 見出し d ランドマーク Enter クリック Space トグル g/G 先頭末尾 r 再取得 L ライブ q 終了";

@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { LANDMARK_ROLES } from "@aria-palina/core";
 
 const HELP_TEXT = `palina — ページのアクセシビリティツリーを NVDA 風テキストで出力する
 
@@ -58,16 +59,7 @@ export interface CliArgs {
 }
 
 const ROLE_ALIASES: Record<string, string[]> = {
-  landmark: [
-    "main",
-    "navigation",
-    "banner",
-    "contentinfo",
-    "complementary",
-    "search",
-    "region",
-    "form",
-  ],
+  landmark: [...LANDMARK_ROLES],
 };
 
 export type ParseResult =

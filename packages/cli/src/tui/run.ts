@@ -1,5 +1,3 @@
-import os from "node:os";
-import path from "node:path";
 import type { A11yNode, AXUpdateCause, AXUpdateSubscription, ICDPClient } from "@aria-palina/core";
 import {
   clearHighlight,
@@ -18,10 +16,16 @@ import {
 } from "@aria-palina/core";
 import type { LiveChange } from "@aria-palina/core";
 import { createElement } from "react";
+import { defaultBrowserFactory, isBrowserNotFound } from "../browser-factory.js";
+import type { BrowserFactory, BrowserHandle } from "../browser-types.js";
 import type { MinimalCDPSession } from "../playwright-cdp-adapter.js";
 import { adaptCDPSession } from "../playwright-cdp-adapter.js";
+import { applyRoleFilter } from "../role-filter.js";
 import { App } from "./components/App.js";
 import type { HighlightController } from "./use-highlight.js";
+
+export { defaultUserDataDir } from "../browser-factory.js";
+export type { BrowserFactory, BrowserFactoryOptions, BrowserHandle } from "../browser-types.js";
 
 /**
  * TUI が利用する CLI 引数の最小形。
@@ -43,27 +47,6 @@ export interface TuiArgs {
   delay?: number;
   /** DOM 変化での自動再取得を有効にするか。@default true */
   live?: boolean;
-}
-
-export interface BrowserHandle {
-  newCDPSessionForUrl(url: string): Promise<MinimalCDPSession>;
-  close(): Promise<void>;
-}
-
-export interface BrowserFactoryOptions {
-  headed: boolean;
-  persist: boolean;
-  userDataDir: string | undefined;
-}
-
-export type BrowserFactory = (opts: BrowserFactoryOptions) => Promise<BrowserHandle>;
-
-/**
- * `--user-data-dir` 未指定かつ永続化有効時のデフォルトプロファイルパス。
- * CLI 側の `defaultUserDataDir` と揃えて `~/.palina/profile` に固定する。
- */
-export function defaultUserDataDir(): string {
-  return path.join(os.homedir(), ".palina", "profile");
 }
 
 /**
@@ -129,47 +112,6 @@ export interface ActionBridge {
   click(node: A11yNode): Promise<void>;
 }
 
-async function defaultBrowserFactory(opts: BrowserFactoryOptions): Promise<BrowserHandle> {
-  const { chromium } = await import("playwright-core");
-  // headed 時は viewport を null にして OS ウィンドウサイズに追従させる
-  // (Playwright 既定の 1280x720 固定だとリサイズしてもレスポンシブが効かないため)
-  const viewport = opts.headed ? null : { width: 1280, height: 720 };
-  const headless = !opts.headed;
-
-  if (opts.persist) {
-    const dir = opts.userDataDir ?? defaultUserDataDir();
-    const context = await chromium.launchPersistentContext(dir, { headless, viewport });
-    return {
-      async newCDPSessionForUrl(url: string): Promise<MinimalCDPSession> {
-        // launchPersistentContext は起動時に空タブを 1 つ自動で開く。
-        // そのページを再利用し、見えない空タブが残らないようにする。
-        const existing = context.pages()[0];
-        const page = existing ?? (await context.newPage());
-        await page.goto(url, { waitUntil: "domcontentloaded" });
-        const session = await context.newCDPSession(page);
-        return session as unknown as MinimalCDPSession;
-      },
-      async close(): Promise<void> {
-        await context.close();
-      },
-    };
-  }
-
-  const browser = await chromium.launch({ headless });
-  const context = await browser.newContext({ viewport });
-  return {
-    async newCDPSessionForUrl(url: string): Promise<MinimalCDPSession> {
-      const page = await context.newPage();
-      await page.goto(url, { waitUntil: "domcontentloaded" });
-      const session = await context.newCDPSession(page);
-      return session as unknown as MinimalCDPSession;
-    },
-    async close(): Promise<void> {
-      await browser.close();
-    },
-  };
-}
-
 async function defaultRender(
   node: ReturnType<typeof createElement>,
   opts?: { stdout?: NodeJS.WriteStream; stdin?: NodeJS.ReadStream; exitOnCtrlC?: boolean },
@@ -200,20 +142,6 @@ async function defaultExtractor(session: MinimalCDPSession, args: TuiArgs): Prom
     await delay(args.delay);
   }
   return extractA11yTree(adapter);
-}
-
-function isBrowserNotFound(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const msg = error.message;
-  return msg.includes("Executable doesn't exist") || msg.includes("browserType.launch");
-}
-
-function applyRoleFilter(nodes: A11yNode[], roles: string[] | undefined): A11yNode[] {
-  if (!roles || roles.length === 0) return nodes;
-  const filtered = nodes.filter((n) => roles.includes(n.role));
-  if (filtered.length === 0) return filtered;
-  const minDepth = Math.min(...filtered.map((n) => n.depth));
-  return filtered.map((n) => ({ ...n, depth: n.depth - minDepth }));
 }
 
 function safeIgnore(p: Promise<unknown>): Promise<void> {

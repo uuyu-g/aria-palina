@@ -293,21 +293,21 @@ describe("parseCliArgs", () => {
 
   test("--role landmark がランドマークロール群に展開される", () => {
     const result = parseCliArgs(["-u", "https://x.com", "--role", "landmark"]);
-    expect(result).toEqual({
-      ok: true,
-      args: expect.objectContaining({
-        role: [
-          "main",
-          "navigation",
-          "banner",
-          "contentinfo",
-          "complementary",
-          "search",
-          "region",
-          "form",
-        ],
-      }),
-    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.args.role).toEqual(
+      expect.arrayContaining([
+        "main",
+        "navigation",
+        "banner",
+        "contentinfo",
+        "complementary",
+        "search",
+        "region",
+        "form",
+      ]),
+    );
+    expect(result.args.role).toHaveLength(8);
   });
 
   test("--role landmark,heading でランドマーク群と heading が結合される", () => {

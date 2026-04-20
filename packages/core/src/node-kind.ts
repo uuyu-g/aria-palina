@@ -15,7 +15,7 @@ export type NodeKind = "interactive" | "heading" | "landmark";
  * ARIA ランドマーク roles。
  * @see https://www.w3.org/TR/wai-aria-1.2/#landmark_roles
  */
-const LANDMARK_ROLES: ReadonlySet<string> = new Set([
+export const LANDMARK_ROLES: ReadonlySet<string> = new Set([
   "banner",
   "complementary",
   "contentinfo",
