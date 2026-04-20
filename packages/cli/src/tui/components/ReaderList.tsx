@@ -1,7 +1,11 @@
-import type { A11yNode } from "@aria-palina/core";
+import {
+  LANDMARK_ROLES,
+  readerBaseDepth,
+  readerSectionLabel,
+  type A11yNode,
+} from "@aria-palina/core";
 import { Box, Text } from "ink";
 import { useMemo } from "react";
-import { toReaderRows } from "../reader-rows.js";
 import { roleTextStyle } from "../role-style.js";
 import { computeWindow } from "../virtual-window.js";
 import { NodeRow } from "./NodeRow.js";
@@ -13,30 +17,28 @@ export interface ReaderListProps {
   viewport: number;
 }
 
-/** ランドマーク区切りの罫線幅。CLI 側の `formatReaderTextOutput` と揃える。 */
+/** ランドマーク境界に描画する罫線幅。CLI 側の `formatReaderTextOutput` と揃える。 */
 const SEPARATOR_DASHES = "──";
 
 /**
  * リーダブルビュー (`view=reader`) のための仮想スクロールリスト。
  *
- * 内部的に {@link toReaderRows} でランドマーク区切りの罫線を含んだ行配列を
- * 構築し、`computeWindow` で可視レンジを算出する。cursor は従来通り
- * A11yNode 配列のインデックスで管理され、ナビゲーション挙動は VirtualList と
- * 同一 (separator 行は飛ばされる格好になる)。
+ * `VirtualList` とほぼ同じで、ランドマーク行だけ `── label ──` の罫線表現に
+ * 差し替える。`cursor` は A11yNode 配列上のインデックスそのままで扱え、
+ * ランドマーク行にカーソルが乗るとそれも選択強調される。
+ *
+ * インデントは `readerBaseDepth` を引いて RootWebArea などの無意味な親ノードの
+ * インデントを詰める。それ以外は raw view と同じ挙動。
  */
 export function ReaderList({ nodes, cursor, viewport }: ReaderListProps) {
-  const { rows, cursorRow } = useMemo(() => {
-    const { rows, nodeIndexToRow } = toReaderRows(nodes);
-    const mapped = nodeIndexToRow.get(cursor);
-    return { rows, cursorRow: mapped ?? 0 };
-  }, [nodes, cursor]);
+  const base = useMemo(() => readerBaseDepth(nodes), [nodes]);
 
   const { start, end } = useMemo(
-    () => computeWindow({ total: rows.length, cursor: cursorRow, viewport }),
-    [rows.length, cursorRow, viewport],
+    () => computeWindow({ total: nodes.length, cursor, viewport }),
+    [nodes.length, cursor, viewport],
   );
 
-  if (rows.length === 0) {
+  if (nodes.length === 0) {
     return (
       <Box>
         <Text dimColor>(表示するノードがありません)</Text>
@@ -44,28 +46,31 @@ export function ReaderList({ nodes, cursor, viewport }: ReaderListProps) {
     );
   }
 
-  const visible = rows.slice(start, end);
+  const visible = nodes.slice(start, end);
 
   return (
     <Box flexDirection="column">
-      {visible.map((row, i) => {
-        const globalRow = start + i;
-        if (row.kind === "separator") {
-          const style = roleTextStyle(row.role);
-          const indent = "  ".repeat(row.indent);
-          const prefix = row.nodeIndex === cursor ? "> " : "  ";
-          const body = `${prefix}${indent}${SEPARATOR_DASHES} ${row.label} ${SEPARATOR_DASHES}`;
-          if (row.nodeIndex === cursor) {
-            // 選択行はロールスタイルより視認性優先で反転表示する (NodeRow と同じ規約)。
+      {visible.map((node, i) => {
+        const globalIndex = start + i;
+        const selected = globalIndex === cursor;
+        const depth = Math.max(0, node.depth - base);
+
+        if (LANDMARK_ROLES.has(node.role)) {
+          const label = readerSectionLabel(node);
+          const indent = "  ".repeat(depth);
+          const prefix = selected ? "> " : "  ";
+          const body = `${prefix}${indent}${SEPARATOR_DASHES} ${label} ${SEPARATOR_DASHES}`;
+          if (selected) {
             return (
-              <Text key={`sep-${globalRow}`} inverse wrap="truncate-end">
+              <Text key={`sep-${globalIndex}`} inverse wrap="truncate-end">
                 {body}
               </Text>
             );
           }
+          const style = roleTextStyle(node.role);
           return (
             <Text
-              key={`sep-${globalRow}`}
+              key={`sep-${globalIndex}`}
               color={style.color}
               bold={style.bold}
               wrap="truncate-end"
@@ -74,13 +79,12 @@ export function ReaderList({ nodes, cursor, viewport }: ReaderListProps) {
             </Text>
           );
         }
-        const selected = row.nodeIndex === cursor;
-        // NodeRow は `node.depth` をインデントに使うため、合算済みの indent を
-        // 上書きした浅いコピーを渡して reader view 上の階層を表示する。
-        const displayNode: A11yNode = { ...row.node, depth: row.indent };
+
+        // 通常ノード: 正規化した depth を反映した浅いコピーを NodeRow に渡す。
+        const displayNode: A11yNode = { ...node, depth };
         return (
           <NodeRow
-            key={`${row.node.backendNodeId}-${row.nodeIndex}`}
+            key={`${node.backendNodeId}-${globalIndex}`}
             node={displayNode}
             selected={selected}
           />

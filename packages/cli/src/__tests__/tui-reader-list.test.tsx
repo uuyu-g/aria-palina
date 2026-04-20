@@ -2,7 +2,6 @@ import type { A11yNode } from "@aria-palina/core";
 import { describe, expect, test } from "vite-plus/test";
 import { render } from "ink-testing-library";
 import { ReaderList } from "../tui/components/ReaderList.js";
-import { toReaderRows } from "../tui/reader-rows.js";
 
 function node(partial: Partial<A11yNode> & { role: string; depth: number }): A11yNode {
   return {
@@ -47,75 +46,8 @@ function sectionedNodes(): A11yNode[] {
   ];
 }
 
-describe("toReaderRows", () => {
-  test("ランドマークごとに separator 行が挿入される", () => {
-    const { rows } = toReaderRows(sectionedNodes());
-    expect(rows.map((r) => r.kind)).toEqual(["separator", "node", "separator", "node", "node"]);
-    const [first, , third] = rows;
-    expect(first?.kind === "separator" && first.label).toBe("banner");
-    expect(third?.kind === "separator" && third.label).toBe("main");
-  });
-
-  test("nodeIndexToRow はアイテムだけでなくランドマーク自身も登録する", () => {
-    const nodes = sectionedNodes();
-    const { nodeIndexToRow } = toReaderRows(nodes);
-    // nodes[0] = banner ランドマーク → row index 0 (separator 自身)
-    expect(nodeIndexToRow.get(0)).toBe(0);
-    // nodes[1] = ロゴ heading → row index 1 (banner separator の次)
-    expect(nodeIndexToRow.get(1)).toBe(1);
-    // nodes[2] = main ランドマーク → row index 2 (2 つ目の separator)
-    expect(nodeIndexToRow.get(2)).toBe(2);
-    // nodes[4] = paragraph 本文 → row index 4
-    expect(nodeIndexToRow.get(4)).toBe(4);
-  });
-
-  test("separator 行は自分のランドマーク A11yNode インデックスを nodeIndex として持つ", () => {
-    const nodes = sectionedNodes();
-    const { rows } = toReaderRows(nodes);
-    const bannerSep = rows[0];
-    const mainSep = rows[2];
-    expect(bannerSep?.kind === "separator" && bannerSep.nodeIndex).toBe(0);
-    expect(mainSep?.kind === "separator" && mainSep.nodeIndex).toBe(2);
-  });
-
-  test("ノード行の indent はランドマーク段数 +1 + セクション内 depth の合算になる", () => {
-    const { rows } = toReaderRows(sectionedNodes());
-    const paragraph = rows.find((r) => r.kind === "node" && r.node.name === "本文");
-    // main (depth=0) の配下で item.depth=1 → indent = 0+1+1 = 2
-    expect(paragraph?.kind === "node" && paragraph.indent).toBe(2);
-  });
-
-  test("ネストしたランドマーク行の indent は入れ子段数を反映する", () => {
-    // banner > navigation > link
-    const nested: A11yNode[] = [
-      node({ backendNodeId: 1, role: "banner", depth: 0, speechText: "[banner]" }),
-      node({
-        backendNodeId: 2,
-        role: "navigation",
-        depth: 1,
-        name: "グローバル",
-        speechText: "[navigation] グローバル",
-      }),
-      node({
-        backendNodeId: 3,
-        role: "link",
-        depth: 2,
-        name: "概要",
-        speechText: "[link] 概要",
-      }),
-    ];
-    const { rows } = toReaderRows(nested);
-    const bannerSep = rows[0];
-    const navSep = rows[1];
-    const link = rows[2];
-    expect(bannerSep?.kind === "separator" && bannerSep.indent).toBe(0);
-    expect(navSep?.kind === "separator" && navSep.indent).toBe(1);
-    expect(link?.kind === "node" && link.indent).toBe(2);
-  });
-});
-
 describe("ReaderList", () => {
-  test("ランドマーク罫線が `── {label} ──` 形式で描画される", () => {
+  test("ランドマーク行は `── label ──` 罫線として描画される", () => {
     const { lastFrame, unmount } = render(
       <ReaderList nodes={sectionedNodes()} cursor={1} viewport={20} />,
     );
@@ -125,7 +57,7 @@ describe("ReaderList", () => {
     unmount();
   });
 
-  test("カーソルは A11yNode インデックスで指定され、該当ノードに > が付く", () => {
+  test("通常ノードにカーソルが乗ると > プレフィクスで選択強調される", () => {
     const { lastFrame, unmount } = render(
       <ReaderList nodes={sectionedNodes()} cursor={4} viewport={20} />,
     );
@@ -136,8 +68,8 @@ describe("ReaderList", () => {
     unmount();
   });
 
-  test("カーソルがランドマーク位置にあるときは separator 行が選択強調される", () => {
-    // sectionedNodes の nodes[2] は main ランドマーク
+  test("ランドマーク行にカーソルが乗ると罫線行が選択強調される", () => {
+    // nodes[2] は main ランドマーク
     const { lastFrame, unmount } = render(
       <ReaderList nodes={sectionedNodes()} cursor={2} viewport={20} />,
     );
@@ -149,7 +81,7 @@ describe("ReaderList", () => {
     unmount();
   });
 
-  test("ランドマーク未出現のページでは separator が挟まれない", () => {
+  test("ランドマーク未出現のページでは罫線が出ない", () => {
     const plain: A11yNode[] = [
       node({
         backendNodeId: 1,
@@ -181,47 +113,34 @@ describe("ReaderList", () => {
     unmount();
   });
 
-  test("ネストしたランドマークは罫線もアイテムも段階的にインデントされる", () => {
-    const nested: A11yNode[] = [
-      node({ backendNodeId: 1, role: "banner", depth: 0, speechText: "[banner]" }),
+  test("readerBaseDepth で RootWebArea ぶんのインデントが詰められる", () => {
+    // depth=2 から始まるケースでも rendering depth は 0 に寄せられる
+    const nodes: A11yNode[] = [
+      node({
+        backendNodeId: 1,
+        role: "main",
+        depth: 2,
+        speechText: "[main]",
+      }),
       node({
         backendNodeId: 2,
-        role: "link",
-        depth: 1,
-        name: "ホーム",
-        speechText: "[link] ホーム",
-      }),
-      node({
-        backendNodeId: 3,
-        role: "navigation",
-        depth: 1,
-        name: "グローバル",
-        speechText: "[navigation] グローバル",
-      }),
-      node({
-        backendNodeId: 4,
-        role: "link",
-        depth: 2,
-        name: "概要",
-        speechText: "[link] 概要",
+        role: "heading",
+        depth: 3,
+        name: "タイトル",
+        speechText: "[heading1] タイトル",
       }),
     ];
-    // cursor=1 (ホーム) を指す。banner/navigation の separator は非選択のまま
-    const { lastFrame, unmount } = render(<ReaderList nodes={nested} cursor={1} viewport={20} />);
+    const { lastFrame, unmount } = render(<ReaderList nodes={nodes} cursor={1} viewport={10} />);
     const frame = lastFrame() ?? "";
     const lines = frame.split("\n");
-    // banner 罫線 (indent=0, 非選択のため "  " プレフィクス付き)
-    expect(lines[0]).toBe("  ── banner ──");
-    // ホーム (選択中) = NodeRow プレフィクス "> " + indent 1 段 ("  ") + speechText
-    expect(lines[1]).toBe(">   [link] ホーム");
-    // navigation 罫線 (indent=1, 非選択) → "  " プレフィクス + indent 1 段 + 罫線
-    expect(lines[2]).toBe("    ── navigation「グローバル」 ──");
-    // 概要 (非選択) = NodeRow プレフィクス "  " + indent 2 段 ("    ") + speechText
-    expect(lines[3]).toBe("      [link] 概要");
+    // main 罫線: インデント 0
+    expect(lines[0]).toBe("  ── main ──");
+    // heading: NodeRow の "> " (選択中) + indent 1 段 ("  ") + speechText
+    expect(lines[1]).toBe(">   [heading1] タイトル");
     unmount();
   });
 
-  test("内側ランドマークが外側の途中に挟まると、外側の続きは見出しなしでインライン描画される", () => {
+  test("外側ランドマークの途中に内側が挟まっても DOM 順がそのまま維持される", () => {
     // <main><p>intro</p><nav>...<a>Overview</a></nav><p>after-nav</p></main>
     const inlineNested: A11yNode[] = [
       node({ backendNodeId: 1, role: "main", depth: 0, speechText: "[main]" }),
@@ -254,31 +173,22 @@ describe("ReaderList", () => {
         speechText: "[paragraph] after-nav",
       }),
     ];
-    // cursor=0 で main 見出し選択。after-nav は main 継続セクションの items として
-    // インラインで navigation の後に出ることを確認する。
     const { lastFrame, unmount } = render(
       <ReaderList nodes={inlineNested} cursor={0} viewport={20} />,
     );
     const frame = lastFrame() ?? "";
     const lines = frame.split("\n").filter((l) => l.length > 0);
-    // 期待される並び:
-    // > ── main ──
-    //   [paragraph] intro
-    //   ── navigation「User profile」 ──
-    //   [link] Overview
-    //   [paragraph] after-nav   ← 継続セクションの item (見出し再描画なし)
     expect(lines[0]).toContain("── main ──");
     expect(lines[1]).toContain("[paragraph] intro");
     expect(lines[2]).toContain("── navigation「User profile」 ──");
     expect(lines[3]).toContain("[link] Overview");
     expect(lines[4]).toContain("[paragraph] after-nav");
-    // main の見出し行は 1 度しか出ない (継続セクションで再描画されない)
-    const mainHeaderLines = lines.filter((l) => l.includes("── main ──"));
-    expect(mainHeaderLines.length).toBe(1);
+    // main の罫線は 1 度だけ
+    expect(lines.filter((l) => l.includes("── main ──")).length).toBe(1);
     unmount();
   });
 
-  test("viewport がセクション行数より小さいとき separator+カーソル周辺のみ描画される", () => {
+  test("viewport がノード数より小さいとき cursor 周辺のみ描画される", () => {
     const { lastFrame, unmount } = render(
       <ReaderList nodes={sectionedNodes()} cursor={4} viewport={3} />,
     );

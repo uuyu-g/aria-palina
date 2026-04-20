@@ -1,4 +1,9 @@
-import { buildReaderView, type A11yNode, type ReaderSection } from "@aria-palina/core";
+import {
+  LANDMARK_ROLES,
+  readerBaseDepth,
+  readerSectionLabel,
+  type A11yNode,
+} from "@aria-palina/core";
 import { colorizeByRole } from "./colorize.js";
 
 export interface TextFormatOptions {
@@ -23,46 +28,30 @@ export function formatTextOutput(nodes: A11yNode[], opts: TextFormatOptions): st
 /** ランドマーク境界に描画する罫線幅。幅狭ターミナルでも見切れない値を選ぶ。 */
 const SEPARATOR_DASHES = "──";
 
-function renderSeparator(section: ReaderSection, indent: boolean, color: boolean): string {
-  // 継続セクションは見出しを描画しない (内側ランドマークを抜けて外側に戻った続き)。
-  if (section.continuation) return "";
-  const prefix = indent ? "  ".repeat(section.depth) : "";
-  const line =
-    section.label.length > 0 ? `${SEPARATOR_DASHES} ${section.label} ${SEPARATOR_DASHES}` : "";
-  if (line.length === 0) return "";
-  const body = color ? colorizeByRole(section.landmark?.role ?? "", line) : line;
-  return `${prefix}${body}`;
-}
-
 /**
  * リーダブルビュー (`--view=reader` 相当) のテキスト出力。
  *
- * ランドマーク境界に `── {role}「{name}」 ──` の罫線を挟み、各セクション内では
- * `ReaderItem.depth` (ランドマーク基準で再採番済み) と `ReaderSection.depth`
- * (ランドマーク入れ子段数) の合算値をインデントに使う。ランドマークが付かない
- * 暗黙セクションでは罫線を省略する。
- *
- * インデント規約 (`indent: true` のとき):
- * - 罫線行 = `section.depth * 2` スペース。
- * - アイテム行 = `(section.depth + 1 + item.depth) * 2` スペース。
- *   罫線行の直下 (item.depth=0) は罫線より 2 つ深いインデントになる。
+ * ランドマーク行を `── {role}「{name}」 ──` の罫線に置換し、それ以外のノードは
+ * そのまま speechText として出す。インデントは `readerBaseDepth` を引いて
+ * RootWebArea などの無意味な親ノードのインデントを詰める。ドキュメント順は
+ * そのままなので、`<main>` の途中に `<nav>` が挟まるケースでも元の位置関係が
+ * 保たれる。
  */
 export function formatReaderTextOutput(nodes: A11yNode[], opts: TextFormatOptions): string {
-  const sections = buildReaderView(nodes);
-  const lines: string[] = [];
-  for (const section of sections) {
-    const separator = renderSeparator(section, opts.indent, opts.color);
-    if (separator.length > 0) lines.push(separator);
-    const itemBaseIndent = section.landmark !== null ? section.depth + 1 : section.depth;
-    for (const item of section.items) {
-      const prefix = opts.indent ? "  ".repeat(itemBaseIndent + item.depth) : "";
-      const text = opts.color
-        ? colorizeByRole(item.node.role, item.node.speechText)
-        : item.node.speechText;
-      lines.push(`${prefix}${text}`);
-    }
-  }
-  return lines.join("\n");
+  const base = readerBaseDepth(nodes);
+  return nodes
+    .map((node) => {
+      const depth = Math.max(0, node.depth - base);
+      const prefix = opts.indent ? "  ".repeat(depth) : "";
+      if (LANDMARK_ROLES.has(node.role)) {
+        const line = `${SEPARATOR_DASHES} ${readerSectionLabel(node)} ${SEPARATOR_DASHES}`;
+        const body = opts.color ? colorizeByRole(node.role, line) : line;
+        return `${prefix}${body}`;
+      }
+      const text = opts.color ? colorizeByRole(node.role, node.speechText) : node.speechText;
+      return `${prefix}${text}`;
+    })
+    .join("\n");
 }
 
 export function formatJsonOutput(nodes: A11yNode[]): string {

@@ -19,7 +19,6 @@ export { VirtualList, type VirtualListProps } from "./components/VirtualList.js"
 export { ReaderList, type ReaderListProps } from "./components/ReaderList.js";
 export { NodeRow, type NodeRowProps } from "./components/NodeRow.js";
 export { computeWindow, type VirtualWindow, type VirtualWindowInput } from "./virtual-window.js";
-export { toReaderRows, type ReaderRow, type ReaderRowsResult } from "./reader-rows.js";
 export {
   useHighlight,
   type HighlightController,
