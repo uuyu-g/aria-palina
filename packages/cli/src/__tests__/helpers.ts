@@ -45,15 +45,15 @@ export function makeNodes(count: number): A11yNode[] {
 }
 
 /**
- * イベントリスナーを管理できる MinimalCDPSession のフェイク。
- * `listeners` を使って外部からイベントを発火できる。
+ * `on` / `off` のイベント登録・解除を Map で管理するスタブ。
+ * `ICDPClient` / `MinimalCDPSession` 共通のリスナ実装をテスト間で共有する。
+ * core 側 (`packages/core/src/__tests__/helpers.ts`) にも同名のヘルパがあるが、
+ * core の test helpers は公開 API 外のためパッケージ越境 import を避ける目的で
+ * 各パッケージにコピーを置いている。
  */
-export function createFakeSession() {
+export function makeListenerStub() {
   const listeners = new Map<string, Set<(params: unknown) => void>>();
-  const session: MinimalCDPSession = {
-    async send(_method: string, _params?: Record<string, unknown>) {
-      return { nodes: [{ nodeId: "1", role: { value: "button" } }] };
-    },
+  return {
     on(event: string, listener: (params: unknown) => void) {
       if (!listeners.has(event)) listeners.set(event, new Set());
       listeners.get(event)!.add(listener);
@@ -61,6 +61,26 @@ export function createFakeSession() {
     off(event: string, listener: (params: unknown) => void) {
       listeners.get(event)?.delete(listener);
     },
+    emit(event: string, params: unknown) {
+      const set = listeners.get(event);
+      if (set) for (const fn of set) fn(params);
+    },
+    listeners,
   };
-  return { session, listeners };
+}
+
+/**
+ * イベントリスナーを管理できる MinimalCDPSession のフェイク。
+ * `listeners` を使って外部からイベントを発火できる。
+ */
+export function createFakeSession() {
+  const stub = makeListenerStub();
+  const session: MinimalCDPSession = {
+    async send(_method: string, _params?: Record<string, unknown>) {
+      return { nodes: [{ nodeId: "1", role: { value: "button" } }] };
+    },
+    on: stub.on,
+    off: stub.off,
+  };
+  return { session, listeners: stub.listeners };
 }

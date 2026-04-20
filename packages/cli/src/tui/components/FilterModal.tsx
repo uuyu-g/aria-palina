@@ -1,14 +1,9 @@
 import type { A11yNode, NodeKind } from "@aria-palina/core";
 import { Box, Text } from "ink";
 import { useMemo } from "react";
+import { KIND_LABEL } from "../kind-label.js";
 import { computeWindow } from "../virtual-window.js";
 import { NodeRow } from "./NodeRow.js";
-
-const KIND_LABEL: Readonly<Record<NodeKind, string>> = {
-  heading: "見出し",
-  landmark: "ランドマーク",
-  interactive: "インタラクティブ",
-};
 
 /** タブバーの表示順。`cycleKind` と同じ巡回順序。 */
 const TAB_ORDER: readonly NodeKind[] = ["heading", "landmark", "interactive"];

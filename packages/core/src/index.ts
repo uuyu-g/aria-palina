@@ -24,7 +24,14 @@ export {
   waitForSelector,
   type WaitConditionOptions,
 } from "./wait-conditions.js";
-export { cycleKind, filterByKind, findNext, matchesKind, type NodeKind } from "./node-kind.js";
+export {
+  cycleKind,
+  filterByKind,
+  findNext,
+  LANDMARK_ROLES,
+  matchesKind,
+  type NodeKind,
+} from "./node-kind.js";
 export {
   clearHighlight,
   disableOverlay,
