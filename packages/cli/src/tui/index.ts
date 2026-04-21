@@ -23,3 +23,10 @@ export {
   type HighlightController,
   type UseHighlightOptions,
 } from "./use-highlight.js";
+export {
+  parseMouseSequence,
+  useMouse,
+  type MouseEvent,
+  type MouseEventKind,
+  type UseMouseOptions,
+} from "./use-mouse.js";
