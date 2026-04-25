@@ -21,6 +21,8 @@
  * @see ../../../docs/dd.md §2.3
  */
 
+import { isTableCellRole } from "./role-classification.js";
+
 /**
  * 状態プロパティ → 日本語ラベル辞書。
  * `on` は該当状態が真 (true) / 非デフォルト値のときの読み上げ、
@@ -48,79 +50,106 @@ export interface SpeechInput {
   state: Record<string, boolean | string>;
 }
 
-/** テーブルのセル系ロール。位置情報・列ヘッダー名の付与対象。 */
-const TABLE_CELL_ROLES = new Set(["cell", "gridcell", "columnheader", "rowheader"]);
+/**
+ * ロール固有のラベル整形戦略。
+ *
+ * `role` 名と構造系プロパティから `[role]` ラベルの中身 (= 角括弧の内側)
+ * を生成する純粋関数。レジストリに無いロールは {@link defaultRoleFormatter}
+ * が呼ばれてロール名そのままを返す。
+ *
+ * 新しい役割固有の整形 (例: `treeitem` の展開深さ) を追加する際は、
+ * フォーマッタ関数を 1 つ書いて {@link ROLE_FORMATTERS} にエントリを足す
+ * だけで良い (OCP)。
+ */
+type RoleFormatter = (role: string, properties: Record<string, unknown>) => string;
+
+const defaultRoleFormatter: RoleFormatter = (role) => role;
+
+const formatHeading: RoleFormatter = (role, properties) => {
+  const level = properties["level"];
+  if (typeof level === "number" && Number.isFinite(level)) {
+    return `${role}${level}`;
+  }
+  return role;
+};
+
+const formatTable: RoleFormatter = (role, properties) => {
+  const rowCount = properties["tableRowCount"];
+  const colCount = properties["tableColCount"];
+  if (typeof rowCount === "number" && typeof colCount === "number") {
+    return `${role} ${rowCount}行×${colCount}列`;
+  }
+  return role;
+};
+
+const formatTableCell: RoleFormatter = (role, properties) => {
+  const colIndex = properties["tableColIndex"];
+  const colCount = properties["tableColCount"];
+  const header = properties["tableColumnHeader"];
+
+  const hasPosition = typeof colIndex === "number" && typeof colCount === "number";
+  const hasHeader =
+    typeof header === "string" && header.length > 0 && (role === "cell" || role === "gridcell");
+
+  if (!hasPosition && !hasHeader) return role;
+
+  let label = role;
+  if (hasPosition) {
+    label += ` ${colIndex}/${colCount}`;
+  }
+  if (hasHeader) {
+    label += `, ${header}`;
+  }
+  return label;
+};
+
+const formatValueWidget: RoleFormatter = (role, properties) => {
+  const valuetext = properties["valuetext"];
+  if (typeof valuetext === "string" && valuetext.length > 0) {
+    return `${role} ${valuetext}`;
+  }
+  const valuenow = properties["valuenow"];
+  if (typeof valuenow === "number" && Number.isFinite(valuenow)) {
+    const valuemax = properties["valuemax"];
+    if (typeof valuemax === "number" && Number.isFinite(valuemax)) {
+      return `${role} ${valuenow}/${valuemax}`;
+    }
+    return `${role} ${valuenow}`;
+  }
+  return role;
+};
 
 /**
- * role (＋ heading level のような構造系プロパティ) をラベル文字列へ変換する。
- *
- * ロール名はそのまま使用し、構造系プロパティを付与する:
+ * ロール → 整形戦略のレジストリ。
+ * 例:
  * - `heading`: `properties.level` を末尾に連結 → "heading2"
  * - `table` / `grid`: 行列数を付与 → "table 3行×4列"
  * - `cell` / `gridcell`: 列位置＋ヘッダー名 → "cell 3/4, 権限"
  * - `columnheader` / `rowheader`: 列位置 → "columnheader 1/4"
+ * - `slider` / `progressbar` / `meter`: 値表示 → "slider 50/100"
+ *
+ * `table-cell` クラスのロールは登録不要 (下のフォールバックで処理する)。
+ */
+const ROLE_FORMATTERS: Readonly<Record<string, RoleFormatter>> = {
+  heading: formatHeading,
+  table: formatTable,
+  grid: formatTable,
+  slider: formatValueWidget,
+  progressbar: formatValueWidget,
+  meter: formatValueWidget,
+};
+
+/**
+ * role (＋ heading level のような構造系プロパティ) をラベル文字列へ変換する。
+ *
+ * 1. レジストリに登録された専用フォーマッタを優先。
+ * 2. table-cell クラスのロールは {@link formatTableCell} を適用。
+ * 3. それ以外は {@link defaultRoleFormatter} (ロール名そのまま)。
  */
 function formatRoleLabel(role: string, properties: Record<string, unknown>): string {
-  const base = role;
-
-  if (role === "heading") {
-    const level = properties["level"];
-    if (typeof level === "number" && Number.isFinite(level)) {
-      return `${base}${level}`;
-    }
-    return base;
-  }
-
-  // Table / Grid: テーブル 3行×4列
-  if (role === "table" || role === "grid") {
-    const rowCount = properties["tableRowCount"];
-    const colCount = properties["tableColCount"];
-    if (typeof rowCount === "number" && typeof colCount === "number") {
-      return `${base} ${rowCount}行×${colCount}列`;
-    }
-    return base;
-  }
-
-  // Cell-like roles: セル 3/4, 権限 | 列見出し 1/4
-  if (TABLE_CELL_ROLES.has(role)) {
-    const colIndex = properties["tableColIndex"];
-    const colCount = properties["tableColCount"];
-    const header = properties["tableColumnHeader"];
-
-    const hasPosition = typeof colIndex === "number" && typeof colCount === "number";
-    const hasHeader =
-      typeof header === "string" && header.length > 0 && (role === "cell" || role === "gridcell");
-
-    if (!hasPosition && !hasHeader) return base;
-
-    let label = base;
-    if (hasPosition) {
-      label += ` ${colIndex}/${colCount}`;
-    }
-    if (hasHeader) {
-      label += `, ${header}`;
-    }
-    return label;
-  }
-
-  // Slider / Progressbar / Meter: 値表示
-  if (role === "slider" || role === "progressbar" || role === "meter") {
-    const valuetext = properties["valuetext"];
-    if (typeof valuetext === "string" && valuetext.length > 0) {
-      return `${base} ${valuetext}`;
-    }
-    const valuenow = properties["valuenow"];
-    if (typeof valuenow === "number" && Number.isFinite(valuenow)) {
-      const valuemax = properties["valuemax"];
-      if (typeof valuemax === "number" && Number.isFinite(valuemax)) {
-        return `${base} ${valuenow}/${valuemax}`;
-      }
-      return `${base} ${valuenow}`;
-    }
-    return base;
-  }
-
-  return base;
+  const formatter =
+    ROLE_FORMATTERS[role] ?? (isTableCellRole(role) ? formatTableCell : defaultRoleFormatter);
+  return formatter(role, properties);
 }
 
 /**
