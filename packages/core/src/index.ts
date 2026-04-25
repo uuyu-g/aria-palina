@@ -29,6 +29,7 @@ export {
   filterByKind,
   findNext,
   findNextTarget,
+  LANDMARK_ROLES,
   listInteractiveTargets,
   matchesKind,
   type InteractiveTarget,

@@ -8,8 +8,24 @@ import {
   type InlineSegment,
   type NodeKind,
 } from "@aria-palina/core";
-import { Box, Text, useApp, useInput, useStdout, type Key } from "ink";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Box, Text, useApp, useInput, useStdout } from "ink";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
+import {
+  dispatchKey,
+  MODAL_BINDINGS,
+  NORMAL_BINDINGS,
+  type ModalContext,
+  type NormalContext,
+} from "../keybindings.js";
+import { KIND_LABEL } from "../kind-label.js";
 import type { ActionBridge, LiveBridge, LiveUpdate } from "../run.js";
 import { useHighlight, type HighlightController } from "../use-highlight.js";
 import { FilterModal } from "./FilterModal.js";
@@ -54,12 +70,6 @@ const MIN_VIEWPORT = 3;
 
 /** モーダル内のボーダー・タイトル・ヘルプ行で消費される行数。 */
 const MODAL_CHROME_LINES = 4; // border top + title + help + border bottom
-
-const KIND_LABEL: Readonly<Record<NodeKind, string>> = {
-  heading: "見出し",
-  landmark: "ランドマーク",
-  interactive: "インタラクティブ",
-};
 
 const FOOTER_NORMAL =
   "↑/↓ 移動 Tab フォーカス h 見出し d ランドマーク Enter クリック Space トグル g/G 先頭末尾 r 再取得 L ライブ q 終了";
@@ -244,7 +254,74 @@ export function App({
     [viewport],
   );
 
+  const triggerAction = useCallback(
+    (allowedRoles: ReadonlySet<string>): void => {
+      if (!actionBridge) return;
+      const node = nodes[cursor];
+      if (!node) return;
+
+      // アクティブセグメントがあればそれを優先。セグメントは親行とは別の
+      // role / backendNodeId / state を持つため、独立した A11yNode として
+      // アクションブリッジに渡す。
+      const segment = activeSegment !== null ? node.inlineSegments?.[activeSegment] : undefined;
+      const target: A11yNode = segment ? segmentAsNode(segment, node) : node;
+
+      if (!allowedRoles.has(target.role)) return;
+      if (target.backendNodeId === 0) return;
+      // 初回のヘッドレス操作だけは「視認できない」旨の警告を出し、通常の
+      // クリックフィードバックを上書きする。後続の操作では普通に
+      // `✱ クリック: <label>` を表示する。
+      if (headless && !headlessWarnedRef.current) {
+        headlessWarnedRef.current = true;
+        setLiveStatus("[headless] 操作結果は --headed で視認可能");
+      } else {
+        const label = target.name && target.name.length > 0 ? target.name : target.role;
+        setLiveStatus(`✱ クリック: ${label}`);
+      }
+      // CDP への送信はバックグラウンドで fire-and-forget。失敗しても TUI を
+      // 壊さないよう握りつぶし、後続の live 更新に任せてカーソルを復元する。
+      void actionBridge.click(target).catch(() => {});
+    },
+    [actionBridge, activeSegment, cursor, headless, nodes],
+  );
+
+  const openModal = useCallback(
+    (kind: NodeKind) => {
+      // 現在位置→前方→後方の順で最寄りのマッチを探す。
+      // 該当要素が無ければモーダルは開かない (空リストで UI を壊さないため)。
+      const target = findNearest(nodes, cursor, kind);
+      if (target === -1) return;
+      setCursor(target);
+      setActiveSegment(null);
+      setModalKind(kind);
+    },
+    [nodes, cursor],
+  );
+
+  const switchModalKind = useCallback(
+    (current: NodeKind, direction: 1 | -1) => {
+      const nextKind = cycleKind(current, direction);
+      const idx = findNearest(nodes, cursor, nextKind);
+      if (idx === -1) return; // 新しい種別に該当するノードが全く無ければ no-op。
+      setCursor(idx);
+      setActiveSegment(null);
+      setModalKind(nextKind);
+    },
+    [nodes, cursor],
+  );
+
+  /**
+   * Tab 以外の経路でカーソルを動かすときに使う wrap。`setActiveSegment(null)` を
+   * 同時に発火し、行カーソル中心の挙動 (1 行 = 1 カーソル) に戻す。
+   * NormalContext / ModalContext の `setCursor` フィールドへ注入する。
+   */
+  const setCursorClearSegment = useCallback<Dispatch<SetStateAction<number>>>((action) => {
+    setCursor(action);
+    setActiveSegment(null);
+  }, []);
+
   useInput((input, key) => {
+    // 全モード共通: q / Ctrl-C で終了。
     if (input === "q" || (key.ctrl && input === "c")) {
       onExit?.();
       exit();
@@ -269,183 +346,41 @@ export function App({
     }
 
     if (modalKind !== null) {
-      handleModalMode(input, key, modalKind);
+      const ctx: ModalContext = {
+        modalKind,
+        filteredToFull,
+        modalCursor,
+        modalViewport,
+        setCursor: setCursorClearSegment,
+        closeModal: () => setModalKind(null),
+        switchModalKind,
+      };
+      dispatchKey(input, key, MODAL_BINDINGS, ctx);
       return;
     }
-    handleNormalMode(input, key);
-  });
 
-  // 方向キー経由で行カーソルを動かすヘルパー。セグメントフォーカスは
-  // 必ず解除する (Tab 以外の方法では行単位のカーソルに戻す方針)。
-  function moveCursor(next: number): void {
-    setCursor(next);
-    setActiveSegment(null);
-  }
-
-  function handleNormalMode(input: string, key: Key) {
-    if (key.downArrow || input === "j") {
-      moveCursor(Math.min(nodes.length - 1, cursor + 1));
-      return;
-    }
-    if (key.upArrow || input === "k") {
-      moveCursor(Math.max(0, cursor - 1));
-      return;
-    }
-    if (key.pageDown) {
-      moveCursor(Math.min(nodes.length - 1, cursor + viewport));
-      return;
-    }
-    if (key.pageUp) {
-      moveCursor(Math.max(0, cursor - viewport));
-      return;
-    }
-    if (input === "g") {
-      moveCursor(0);
-      return;
-    }
-    if (input === "G") {
-      moveCursor(Math.max(0, nodes.length - 1));
-      return;
-    }
-    if (input === "h") {
-      openModal("heading");
-      return;
-    }
-    if (input === "d") {
-      openModal("landmark");
-      return;
-    }
-    if (input === "r" || input === "R") {
-      if (liveBridge) {
+    const ctx: NormalContext = {
+      nodeCount: nodes.length,
+      viewport,
+      setCursor: setCursorClearSegment,
+      openModal,
+      refreshNodes: () => {
+        if (!liveBridge) return;
         setLiveStatus("⟳ 再取得中...");
         void liveBridge.refresh();
-      }
-      return;
-    }
-    if (input === "L") {
-      if (liveBridge) {
+      },
+      toggleLive: () => {
+        if (!liveBridge) return;
         void liveBridge.toggleLive().then((enabled) => {
           setLiveEnabled(enabled);
           setLiveStatus(enabled ? "⟳ ライブ更新 ON" : "⏸ ライブ更新 OFF");
         });
-      }
-      return;
-    }
-    if (key.return) {
-      triggerAction(ENTER_ROLES);
-      return;
-    }
-    if (input === " ") {
-      triggerAction(SPACE_ROLES);
-      return;
-    }
-  }
-
-  function triggerAction(allowedRoles: ReadonlySet<string>): void {
-    if (!actionBridge) return;
-    const node = nodes[cursor];
-    if (!node) return;
-
-    // アクティブセグメントがあればそれを優先。セグメントは親行とは別の
-    // role / backendNodeId / state を持つため、独立した A11yNode として
-    // アクションブリッジに渡す。
-    const segment = activeSegment !== null ? node.inlineSegments?.[activeSegment] : undefined;
-    const target: A11yNode = segment ? segmentAsNode(segment, node) : node;
-
-    if (!allowedRoles.has(target.role)) return;
-    if (target.backendNodeId === 0) return;
-    // 初回のヘッドレス操作だけは「視認できない」旨の警告を出し、通常の
-    // クリックフィードバックを上書きする。後続の操作では普通に
-    // `✱ クリック: <label>` を表示する。
-    if (headless && !headlessWarnedRef.current) {
-      headlessWarnedRef.current = true;
-      setLiveStatus("[headless] 操作結果は --headed で視認可能");
-    } else {
-      const label = target.name && target.name.length > 0 ? target.name : target.role;
-      setLiveStatus(`✱ クリック: ${label}`);
-    }
-    // CDP への送信はバックグラウンドで fire-and-forget。失敗しても TUI を
-    // 壊さないよう握りつぶし、後続の live 更新に任せてカーソルを復元する。
-    void actionBridge.click(target).catch(() => {});
-  }
-
-  function handleModalMode(input: string, key: Key, kind: NodeKind) {
-    if (key.escape) {
-      setModalKind(null);
-      return;
-    }
-    if (key.return) {
-      // Enter: 現在位置で確定してモーダルを閉じる
-      setModalKind(null);
-      return;
-    }
-
-    if (filteredToFull.length === 0) return;
-    const last = filteredToFull.length - 1;
-    const clamp = (i: number) => Math.max(0, Math.min(last, i));
-
-    if (key.downArrow || input === "j") {
-      const next = clamp(modalCursor + 1);
-      const full = filteredToFull[next];
-      if (full !== undefined) setCursor(full);
-      return;
-    }
-    if (key.upArrow || input === "k") {
-      const next = clamp(modalCursor - 1);
-      const full = filteredToFull[next];
-      if (full !== undefined) setCursor(full);
-      return;
-    }
-    if (key.pageDown) {
-      const next = clamp(modalCursor + modalViewport);
-      const full = filteredToFull[next];
-      if (full !== undefined) setCursor(full);
-      return;
-    }
-    if (key.pageUp) {
-      const next = clamp(modalCursor - modalViewport);
-      const full = filteredToFull[next];
-      if (full !== undefined) setCursor(full);
-      return;
-    }
-    if (input === "g") {
-      const full = filteredToFull[0];
-      if (full !== undefined) setCursor(full);
-      return;
-    }
-    if (input === "G") {
-      const full = filteredToFull[last];
-      if (full !== undefined) setCursor(full);
-      return;
-    }
-    if (key.leftArrow) {
-      switchModalKind(kind, -1);
-      return;
-    }
-    if (key.rightArrow) {
-      switchModalKind(kind, 1);
-      return;
-    }
-  }
-
-  function openModal(kind: NodeKind) {
-    // 現在位置→前方→後方の順で最寄りのマッチを探す。
-    // 該当要素が無ければモーダルは開かない (空リストで UI を壊さないため)。
-    const target = findNearest(nodes, cursor, kind);
-    if (target === -1) return;
-    setCursor(target);
-    setActiveSegment(null);
-    setModalKind(kind);
-  }
-
-  function switchModalKind(current: NodeKind, direction: 1 | -1) {
-    const nextKind = cycleKind(current, direction);
-    const idx = findNearest(nodes, cursor, nextKind);
-    if (idx === -1) return; // 新しい種別に該当するノードが全く無ければ no-op。
-    setCursor(idx);
-    setActiveSegment(null);
-    setModalKind(nextKind);
-  }
+      },
+      triggerEnter: () => triggerAction(ENTER_ROLES),
+      triggerSpace: () => triggerAction(SPACE_ROLES),
+    };
+    dispatchKey(input, key, NORMAL_BINDINGS, ctx);
+  });
 
   const position =
     modalKind === null
