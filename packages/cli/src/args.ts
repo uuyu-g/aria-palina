@@ -1,5 +1,11 @@
 import { parseArgs } from "node:util";
 import { LANDMARK_ROLES } from "@aria-palina/core";
+import {
+  expandRoleAliases,
+  validateEnumOption,
+  validateNumberOption,
+  validateTriStateFlag,
+} from "./args-validators.js";
 
 const HELP_TEXT = `palina — ページのアクセシビリティツリーを NVDA 風テキストで出力する
 
@@ -132,113 +138,67 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
     };
   }
 
-  const format = values.format as string;
-  if (format !== "text" && format !== "json") {
-    return {
-      ok: false,
-      exitCode: 2,
-      message: `不正な --format 値: "${format}"。"text" または "json" を指定してください。`,
-    };
-  }
+  const formatResult = validateEnumOption(values.format as string, "--format", ["text", "json"]);
+  if (!formatResult.ok) return { ok: false, exitCode: 2, message: formatResult.error };
 
   const tuiRequested = (values.tui as boolean) ?? false;
-  const waitRaw = values.wait as string | undefined;
   // `wait` のデフォルトはモード依存。TUI はライブ購読と `r` キーで
   // 事後の再抽出が効くため、起動が体感で止まらない `"none"` を既定とし、
   // 必要なら `--wait=network-idle` で opt-in させる。ワンショット CLI は
   // 1 回きりの抽出なので従来通り `"network-idle"` を既定とする。
-  const wait = waitRaw ?? (tuiRequested ? "none" : "network-idle");
-  if (wait !== "none" && wait !== "network-idle") {
-    return {
-      ok: false,
-      exitCode: 2,
-      message: `不正な --wait 値: "${wait}"。"network-idle" または "none" を指定してください。`,
-    };
-  }
+  const waitRaw = (values.wait as string | undefined) ?? (tuiRequested ? "none" : "network-idle");
+  const waitResult = validateEnumOption(waitRaw, "--wait", ["none", "network-idle"]);
+  if (!waitResult.ok) return { ok: false, exitCode: 2, message: waitResult.error };
 
-  const idleTimeRaw = values["idle-time"] as string;
-  const idleTime = Number(idleTimeRaw);
-  if (!Number.isFinite(idleTime) || idleTime < 0) {
-    return {
-      ok: false,
-      exitCode: 2,
-      message: `不正な --idle-time 値: "${idleTimeRaw}"。0 以上の数値を指定してください。`,
-    };
-  }
+  const idleTimeResult = validateNumberOption(values["idle-time"] as string, {
+    flag: "--idle-time",
+    min: 0,
+    hint: "0 以上の数値を指定してください。",
+  });
+  if (!idleTimeResult.ok) return { ok: false, exitCode: 2, message: idleTimeResult.error };
 
-  const timeoutRaw = values.timeout as string;
-  const timeout = Number(timeoutRaw);
-  if (!Number.isFinite(timeout) || timeout <= 0) {
-    return {
-      ok: false,
-      exitCode: 2,
-      message: `不正な --timeout 値: "${timeoutRaw}"。正の数値を指定してください。`,
-    };
-  }
+  const timeoutResult = validateNumberOption(values.timeout as string, {
+    flag: "--timeout",
+    min: 0,
+    bound: "exclusive",
+    hint: "正の数値を指定してください。",
+  });
+  if (!timeoutResult.ok) return { ok: false, exitCode: 2, message: timeoutResult.error };
 
-  const delayRaw = values.delay as string;
-  const delay = Number(delayRaw);
-  if (!Number.isFinite(delay) || delay < 0) {
-    return {
-      ok: false,
-      exitCode: 2,
-      message: `不正な --delay 値: "${delayRaw}"。0 以上の数値を指定してください。`,
-    };
-  }
+  const delayResult = validateNumberOption(values.delay as string, {
+    flag: "--delay",
+    min: 0,
+    hint: "0 以上の数値を指定してください。",
+  });
+  if (!delayResult.ok) return { ok: false, exitCode: 2, message: delayResult.error };
 
-  const hasLive = values.live as boolean | undefined;
-  const hasNoLive = values["no-live"] as boolean | undefined;
-  if (hasLive && hasNoLive) {
-    return {
-      ok: false,
-      exitCode: 2,
-      message: "--live と --no-live は同時に指定できません。",
-    };
-  }
-  const live = hasNoLive ? false : true;
+  const liveResult = validateTriStateFlag(
+    values.live as boolean | undefined,
+    values["no-live"] as boolean | undefined,
+    "--live",
+    "--no-live",
+  );
+  if (!liveResult.ok) return { ok: false, exitCode: 2, message: liveResult.error };
+  // 既定は live=true (TUI のライブ更新が初期 ON)。
+  const live = liveResult.value !== false;
 
-  const hasIndent = values.indent as boolean | undefined;
-  const hasNoIndent = values["no-indent"] as boolean | undefined;
-  let indent: boolean | undefined;
-  if (hasIndent && hasNoIndent) {
-    return {
-      ok: false,
-      exitCode: 2,
-      message: "--indent と --no-indent は同時に指定できません。",
-    };
-  } else if (hasIndent) {
-    indent = true;
-  } else if (hasNoIndent) {
-    indent = false;
-  }
+  const indentResult = validateTriStateFlag(
+    values.indent as boolean | undefined,
+    values["no-indent"] as boolean | undefined,
+    "--indent",
+    "--no-indent",
+  );
+  if (!indentResult.ok) return { ok: false, exitCode: 2, message: indentResult.error };
 
-  const hasColor = values.color as boolean | undefined;
-  const hasNoColor = values["no-color"] as boolean | undefined;
-  let color: boolean | undefined;
-  if (hasColor && hasNoColor) {
-    return {
-      ok: false,
-      exitCode: 2,
-      message: "--color と --no-color は同時に指定できません。",
-    };
-  } else if (hasColor) {
-    color = true;
-  } else if (hasNoColor) {
-    color = false;
-  }
+  const colorResult = validateTriStateFlag(
+    values.color as boolean | undefined,
+    values["no-color"] as boolean | undefined,
+    "--color",
+    "--no-color",
+  );
+  if (!colorResult.ok) return { ok: false, exitCode: 2, message: colorResult.error };
 
-  const roleRaw = values.role as string | undefined;
-  const role = roleRaw
-    ? [
-        ...new Set(
-          roleRaw
-            .split(",")
-            .map((r) => r.trim().toLowerCase())
-            .filter(Boolean)
-            .flatMap((r) => ROLE_ALIASES[r] ?? [r]),
-        ),
-      ]
-    : undefined;
+  const role = expandRoleAliases(values.role as string | undefined, ROLE_ALIASES);
 
   const userDataDirRaw = values["user-data-dir"] as string | undefined;
   const userDataDir = userDataDirRaw && userDataDirRaw.length > 0 ? userDataDirRaw : undefined;
@@ -252,19 +212,19 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
     args: {
       url,
       headed: (values.headed as boolean) ?? false,
-      format,
-      role: role?.length ? role : undefined,
-      indent,
-      color,
+      format: formatResult.value,
+      role,
+      indent: indentResult.value,
+      color: colorResult.value,
       tui: tuiRequested,
-      wait,
-      idleTime,
-      timeout,
+      wait: waitResult.value,
+      idleTime: idleTimeResult.value,
+      timeout: timeoutResult.value,
       persist,
       userDataDir,
       waitForSelector,
       waitForFunction,
-      delay,
+      delay: delayResult.value,
       live,
     },
   };

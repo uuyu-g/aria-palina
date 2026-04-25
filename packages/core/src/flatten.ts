@@ -14,6 +14,12 @@
  */
 
 import type { RawAXNode, RawAXProperty, RawAXValue } from "./ax-protocol.js";
+import {
+  isCompoundWrapperRole,
+  isDocumentRootRole,
+  isNoiseRole,
+  isTransparentRole,
+} from "./role-classification.js";
 import { buildSpeechText } from "./speech.js";
 import { enrichTableContext } from "./table-context.js";
 import type { A11yNode } from "./types.js";
@@ -142,28 +148,6 @@ function projectNode(raw: RawAXNode, depth: number): A11yNode {
 }
 
 /**
- * Chrome 内部ロールのうち、スクリーンリーダーが読み上げない描画用ノード。
- * これらは `filter: true` 時にサブツリーごと除外する (子も不要)。
- */
-const NOISE_ROLES = new Set(["InlineTextBox", "ListMarker"]);
-
-/**
- * NVDA が読み上げない構造ロール。ノード自体は出力しないが、子ノードは
- * 親の depth を引き継いで走査する (透過的)。
- *
- * - `generic` — `<div>` / `<span>` 等の意味を持たないコンテナ。
- *   ただし `name` が付与されている場合は表示する。
- * - `rowgroup` — `<thead>` / `<tbody>` / `<tfoot>` のラッパー。
- */
-const TRANSPARENT_ROLES = new Set(["generic", "rowgroup"]);
-
-/**
- * ドキュメントルート系ロール。`name` はページタイトル (`<title>`) 由来であり、
- * 子孫テキストから計算されたものではないため、StaticText 重複判定の対象外とする。
- */
-const DOCUMENT_ROOT_ROLES = new Set(["RootWebArea", "WebArea"]);
-
-/**
  * StaticText ノードの「実効親」の name を返す。
  *
  * CDP ツリーでは `generic` (名前なし) や `rowgroup` などの透過的ノード、
@@ -189,10 +173,10 @@ function findEffectiveParentName(node: RawAXNode, byId: ReadonlyMap<string, RawA
     const parentName = readString(parent.name);
 
     // ドキュメントルートの name は <title> 由来なので判定に使わない
-    if (DOCUMENT_ROOT_ROLES.has(parentRole)) return "";
+    if (isDocumentRootRole(parentRole)) return "";
 
     // 透過ロールのうち出力されないもの (generic 名前なし / rowgroup) → さらに上を辿る
-    if (TRANSPARENT_ROLES.has(parentRole)) {
+    if (isTransparentRole(parentRole)) {
       if (parentRole === "generic" && parentName.length > 0) {
         // 名前付き generic はグループとして出力されるのでここで止まる
         return parentName;
@@ -207,9 +191,11 @@ function findEffectiveParentName(node: RawAXNode, byId: ReadonlyMap<string, RawA
 }
 
 /**
- * 名前を持たない wrapper ロール (listitem / menuitem / treeitem / cell /
- * gridcell) が、フラット配列上で唯一の子を持つときに、その子のロール表記と
- * 名前・状態を親行へ吸収し、子ノードを除去する。
+ * 名前を持たない親ノードの唯一の子が StaticText である場合、テキストを
+ * 親に吸収して StaticText 行を除去する。また、親が compound-wrapper クラス
+ * (listitem / menuitem / treeitem / cell / gridcell) に属する場合は、
+ * StaticText 以外の子ロールも `[parent] [child]` 形式へ統合して 1 行に
+ * 圧縮する。
  *
  * 典型ケースは `<li><a>Home</a></li>` や `<td><button>削除</button></td>` の
  * ような、ラッパーが 1 つのインタラクティブ要素だけを包む深いネスト。
@@ -218,14 +204,6 @@ function findEffectiveParentName(node: RawAXNode, byId: ReadonlyMap<string, RawA
  *
  * フォーカス可能性 (`isFocusable`) と状態 (`state`) は親へ伝播するため、
  * Tab モードでの到達性・disabled 表示などは保持される。
- */
-const COMPOUND_WRAPPER_ROLES = new Set(["listitem", "menuitem", "treeitem", "cell", "gridcell"]);
-
-/**
- * 名前を持たない親ノードの唯一の子が StaticText である場合、テキストを
- * 親に吸収して StaticText 行を除去する。また、親が `COMPOUND_WRAPPER_ROLES`
- * のいずれかである場合は、StaticText 以外の子ロールも `[parent] [child]`
- * 形式へ統合して 1 行に圧縮する。
  *
  * 例:
  *   `[paragraph]` + `[StaticText] JavaScript`
@@ -272,7 +250,7 @@ function absorbLoneChild(nodes: A11yNode[]): void {
       continue;
     }
 
-    if (COMPOUND_WRAPPER_ROLES.has(parent.role)) {
+    if (isCompoundWrapperRole(parent.role)) {
       // Compound 吸収: [parentRole] [childRole] name (states) を 1 行に生成する
       const parentLabel = buildSpeechText({
         role: parent.role,
@@ -379,7 +357,7 @@ export function flattenAXTree(
     // --- ノイズフィルタリング ---
     if (shouldFilter) {
       // InlineTextBox / ListMarker は無条件で除外 (子も不要)
-      if (NOISE_ROLES.has(role)) return;
+      if (isNoiseRole(role)) return;
 
       // 空白のみの StaticText は除外 (リンク間のホワイトスペース等)
       if (role === "StaticText") {
@@ -396,7 +374,7 @@ export function flattenAXTree(
       }
 
       // generic (名前なし) / rowgroup は透過的に子を辿る (depth を消費しない)
-      if (TRANSPARENT_ROLES.has(role)) {
+      if (isTransparentRole(role)) {
         const nodeName = readString(node.name);
         // 名前が付いている generic はグループとして表示する
         if (role === "generic" && nodeName.length > 0) {
