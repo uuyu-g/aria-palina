@@ -132,3 +132,64 @@ Phase 6 で実装した「TUI カーソル → ブラウザ Overlay ハイライ
   `@aria-palina/cli` / `@aria-palina/cli/tui` から export している。
 - headless + 永続化の組み合わせも素直に動作する (認証済みスナップショットを
   CI が再利用するユースケース)。`--headed` との直交性は保った。
+
+## インライン子の 1 行圧縮とセグメントカーソル (Core / CLI / TUI)
+
+`<p>これは <a>リンク</a> と <img alt="画像"/> の行</p>` のような「段落内にイン
+ライン要素が複数混ざったツリー」は従来複数行に分かれて表示されており、読み物
+としての流れと一覧しての密度の両方が損なわれていた。親行に集約しつつ、どこが
+リンク・画像かが判別でき、かつインタラクティブ要素に Tab で到達できる、とい
+う 3 点を同時に満たす改善を入れた。
+
+**データモデル拡張**
+
+`A11yNode` に `inlineSegments?: InlineSegment[]` を追加。`InlineSegment` は親
+`speechText` 内でのオフセット (`start` / `end`) と、子要素固有の
+`role` / `name` / `backendNodeId` / `isFocusable` / `state` / `properties` を
+保持する。後から作る詳細パネルはこの情報だけで子要素相当の表示を再構成できる。
+
+**Core: `absorbInlineChildren`**
+
+`flattenAXTree` の末尾 (`absorbLoneChild` の直後) で、次の条件を満たす親にイ
+ンライン子を吸収する。
+
+1. 親ロールが `paragraph` / `heading` / `listitem` / `cell` / `gridcell` /
+   `caption` / `blockquote` / `definition` / `label` / `legend` / `button` /
+   `link` / `tab` / `menuitem` / `option` / `treeitem` / `generic` など
+   「自身の name が子孫テキストを連結したもの」として振る舞うロール。
+2. 直接子がすべてインラインロール (`link` / `StaticText` / `generic` / `code` /
+   `emphasis` / `strong` / `mark` / `time` / `abbreviation` / `superscript` /
+   `subscript` / `deletion` / `insertion` / `img` / `ruby`) かつ孫を持たない。
+3. 親 `speechText` 内で各子 `name` を順方向に見つけられる。
+
+条件 3 を外してまで吸収すると「どこが子か」を親行で示せなくなるため、見つから
+ないケースでは従来通りツリーを維持する (画像 alt が親 name に含まれない場合など)。
+
+**CLI: セグメント単位の ANSI 装飾**
+
+`formatTextOutput` に `colorizeSpeechText` を追加。`inlineSegments` があるノードは、
+親ロール色 → セグメントロール色 → 親ロール色… のように `ANSI` エスケープを
+挿入した文字列を生成する。`--no-color` では従来どおり素の `speechText`。
+
+**TUI: セグメントカーソル**
+
+- `App.tsx` に `activeSegment: number | null` を追加。`Tab` / `Shift+Tab` は
+  新規 `findNextTarget(nodes, {rowIndex, segmentIndex}, direction)` で行と
+  セグメントを統合的に巡回する。方向キー / `g` / `G` / `PageUp/Down` / モーダル
+  遷移は `activeSegment` を必ず `null` に戻す (行単位のカーソルに戻す方針)。
+- `Enter` / `Space` は `activeSegment !== null` のとき `inlineSegments[i]` を
+  一時的な `A11yNode` に変換して `ActionBridge.click()` に渡す。これによりセ
+  グメントごとに `backendNodeId` / `role` / `state` を使ったクリック判定がで
+  きる。
+- `NodeRow.tsx` は `inlineSegments` を持つ行を `<Text>` チャンクに分割し、
+  非選択時はセグメント色で描画、選択 + `activeSegment !== null` のときは該当
+  セグメントだけ `inverse` を付ける。既存の「行全体反転」は
+  `activeSegment === null` のケースで維持。
+- `useHighlight` へ渡す `backendNodeId` も `activeSegment` 優先で解決するため、
+  `--headed` のブラウザハイライトはセグメント単位で追従する。
+
+**node-kind へのナビゲーション API 追加**
+
+`InteractiveTarget` 型と `listInteractiveTargets` / `findNextTarget` を
+`@aria-palina/core` から公開。TUI 以外 (将来の拡張 / テストユーティリティ)
+でも同じ巡回ロジックを再利用できる。

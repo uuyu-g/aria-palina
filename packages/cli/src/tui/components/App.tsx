@@ -2,12 +2,22 @@ import {
   cycleKind,
   filterByKind,
   findNext,
+  findNextTarget,
   matchesKind,
   type A11yNode,
+  type InlineSegment,
   type NodeKind,
 } from "@aria-palina/core";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import {
   dispatchKey,
   MODAL_BINDINGS,
@@ -82,6 +92,25 @@ const ENTER_ROLES: ReadonlySet<string> = new Set([
 const SPACE_ROLES: ReadonlySet<string> = new Set(["checkbox", "radio", "switch", "button"]);
 
 /**
+ * `InlineSegment` を一時的な `A11yNode` に変換する。ActionBridge が
+ * `A11yNode` を受け取るインターフェースなので、圧縮行のセグメントに対する
+ * クリック操作を実装するため最小限のフィールドを合成する。
+ */
+function segmentAsNode(segment: InlineSegment, parent: A11yNode): A11yNode {
+  return {
+    backendNodeId: segment.backendNodeId,
+    role: segment.role,
+    name: segment.name,
+    depth: parent.depth,
+    properties: segment.properties,
+    state: segment.state,
+    speechText: segment.name,
+    isFocusable: segment.isFocusable,
+    isIgnored: false,
+  };
+}
+
+/**
  * `from` の位置から最寄りの `kind` 一致ノードを探す。
  * 先に順方向で走査し、見つからなければ逆方向で走査する。両方失敗すれば `-1`。
  * `from` 自身がマッチする場合も `from` を返す (フィルタ切替時に現在位置を優先するため)。
@@ -111,6 +140,12 @@ export function App({
   const { stdout } = useStdout();
   const [nodes, setNodes] = useState<A11yNode[]>(initialNodes);
   const [cursor, setCursor] = useState(0);
+  /**
+   * 圧縮行の中でアクティブなセグメントインデックス。`null` は行全体を
+   * 指している状態で、従来の 1 行 1 カーソル挙動と同等。`Tab` がインライン
+   * 子を指したときだけ数値になり、方向キーで行が変わるときに null に戻す。
+   */
+  const [activeSegment, setActiveSegment] = useState<number | null>(null);
   const [modalKind, setModalKind] = useState<NodeKind | null>(null);
   const [liveEnabled, setLiveEnabled] = useState<boolean>(
     liveBridge ? liveBridge.isLiveEnabled() : false,
@@ -135,6 +170,9 @@ export function App({
             setCursor(0);
           }
         }
+        // ライブ更新では inlineSegments の再計算が入るため、セグメント焦点は
+        // 保存せず行カーソルへ戻す。ユーザーは Tab で再度セグメントへ移れる。
+        setActiveSegment(null);
         return update.nodes;
       });
       // aria-live 相当の変化があれば status にメッセージを流す (NVDA 風通知)。
@@ -168,7 +206,15 @@ export function App({
     return () => clearTimeout(id);
   }, [liveStatus]);
 
-  const cursorBackendNodeId = nodes[cursor]?.backendNodeId ?? 0;
+  // アクティブセグメントがあればその backendNodeId を優先。無ければ行の
+  // backendNodeId をそのまま使う。ブラウザ側のハイライト枠が「今カーソルで
+  // 指している要素」と常に一致する。
+  const cursorBackendNodeId =
+    activeSegment !== null
+      ? (nodes[cursor]?.inlineSegments?.[activeSegment]?.backendNodeId ??
+        nodes[cursor]?.backendNodeId ??
+        0)
+      : (nodes[cursor]?.backendNodeId ?? 0);
   useHighlight(highlightController, cursorBackendNodeId, {
     ...(highlightDebounceMs !== undefined && { debounceMs: highlightDebounceMs }),
   });
@@ -213,8 +259,15 @@ export function App({
       if (!actionBridge) return;
       const node = nodes[cursor];
       if (!node) return;
-      if (!allowedRoles.has(node.role)) return;
-      if (node.backendNodeId === 0) return;
+
+      // アクティブセグメントがあればそれを優先。セグメントは親行とは別の
+      // role / backendNodeId / state を持つため、独立した A11yNode として
+      // アクションブリッジに渡す。
+      const segment = activeSegment !== null ? node.inlineSegments?.[activeSegment] : undefined;
+      const target: A11yNode = segment ? segmentAsNode(segment, node) : node;
+
+      if (!allowedRoles.has(target.role)) return;
+      if (target.backendNodeId === 0) return;
       // 初回のヘッドレス操作だけは「視認できない」旨の警告を出し、通常の
       // クリックフィードバックを上書きする。後続の操作では普通に
       // `✱ クリック: <label>` を表示する。
@@ -222,14 +275,14 @@ export function App({
         headlessWarnedRef.current = true;
         setLiveStatus("[headless] 操作結果は --headed で視認可能");
       } else {
-        const label = node.name && node.name.length > 0 ? node.name : node.role;
+        const label = target.name && target.name.length > 0 ? target.name : target.role;
         setLiveStatus(`✱ クリック: ${label}`);
       }
       // CDP への送信はバックグラウンドで fire-and-forget。失敗しても TUI を
       // 壊さないよう握りつぶし、後続の live 更新に任せてカーソルを復元する。
-      void actionBridge.click(node).catch(() => {});
+      void actionBridge.click(target).catch(() => {});
     },
-    [actionBridge, cursor, headless, nodes],
+    [actionBridge, activeSegment, cursor, headless, nodes],
   );
 
   const openModal = useCallback(
@@ -239,6 +292,7 @@ export function App({
       const target = findNearest(nodes, cursor, kind);
       if (target === -1) return;
       setCursor(target);
+      setActiveSegment(null);
       setModalKind(kind);
     },
     [nodes, cursor],
@@ -250,10 +304,21 @@ export function App({
       const idx = findNearest(nodes, cursor, nextKind);
       if (idx === -1) return; // 新しい種別に該当するノードが全く無ければ no-op。
       setCursor(idx);
+      setActiveSegment(null);
       setModalKind(nextKind);
     },
     [nodes, cursor],
   );
+
+  /**
+   * Tab 以外の経路でカーソルを動かすときに使う wrap。`setActiveSegment(null)` を
+   * 同時に発火し、行カーソル中心の挙動 (1 行 = 1 カーソル) に戻す。
+   * NormalContext / ModalContext の `setCursor` フィールドへ注入する。
+   */
+  const setCursorClearSegment = useCallback<Dispatch<SetStateAction<number>>>((action) => {
+    setCursor(action);
+    setActiveSegment(null);
+  }, []);
 
   useInput((input, key) => {
     // 全モード共通: q / Ctrl-C で終了。
@@ -262,12 +327,19 @@ export function App({
       exit();
       return;
     }
-    // Tab / Shift+Tab は両モード共通でフル配列上のインタラクティブ要素を巡回する。
-    // モーダル中に押された場合はモーダルを閉じて通常モードに戻す。
+    // Tab / Shift+Tab は両モード共通でインタラクティブ要素を巡回する。
+    // インライン圧縮行のセグメントも巡回対象に含めるため、行+セグメント
+    // 座標で走査する `findNextTarget` を使う。モーダル中に押された場合は
+    // モーダルを閉じて通常モードに戻す。
     if (key.tab) {
-      const next = findNext(nodes, cursor, "interactive", key.shift ? -1 : 1);
-      if (next !== -1) {
-        setCursor(next);
+      const target = findNextTarget(
+        nodes,
+        { rowIndex: cursor, segmentIndex: activeSegment },
+        key.shift ? -1 : 1,
+      );
+      if (target !== null) {
+        setCursor(target.rowIndex);
+        setActiveSegment(target.segmentIndex);
         if (modalKind !== null) setModalKind(null);
       }
       return;
@@ -279,7 +351,7 @@ export function App({
         filteredToFull,
         modalCursor,
         modalViewport,
-        setCursor,
+        setCursor: setCursorClearSegment,
         closeModal: () => setModalKind(null),
         switchModalKind,
       };
@@ -290,7 +362,7 @@ export function App({
     const ctx: NormalContext = {
       nodeCount: nodes.length,
       viewport,
-      setCursor,
+      setCursor: setCursorClearSegment,
       openModal,
       refreshNodes: () => {
         if (!liveBridge) return;
@@ -349,7 +421,12 @@ export function App({
         />
       ) : (
         <>
-          <VirtualList nodes={nodes} cursor={cursor} viewport={viewport} />
+          <VirtualList
+            nodes={nodes}
+            cursor={cursor}
+            viewport={viewport}
+            activeSegment={activeSegment}
+          />
           <Box>
             <Text dimColor>{FOOTER_NORMAL}</Text>
           </Box>

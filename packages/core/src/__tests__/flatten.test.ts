@@ -765,6 +765,143 @@ describe("flattenAXTree", () => {
       expect(result.map((n) => n.role)).toEqual(["listitem", "link"]);
     });
 
+    test("paragraph の複数インライン子が inlineSegments に吸収される", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "p",
+          ignored: false,
+          role: { type: "role", value: "paragraph" },
+          name: { type: "computedString", value: "これは リンク と 画像 の行" },
+          childIds: ["a", "img"],
+        }),
+        node({
+          nodeId: "a",
+          parentId: "p",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          name: { type: "computedString", value: "リンク" },
+          backendDOMNodeId: 11,
+          properties: [{ name: "focusable", value: { type: "boolean", value: true } }],
+        }),
+        node({
+          nodeId: "img",
+          parentId: "p",
+          ignored: false,
+          role: { type: "role", value: "img" },
+          name: { type: "computedString", value: "画像" },
+          backendDOMNodeId: 12,
+        }),
+      ]);
+      expect(result).toHaveLength(1);
+      const p = result[0]!;
+      expect(p.role).toBe("paragraph");
+      expect(p.speechText).toBe("[paragraph] これは リンク と 画像 の行");
+      const segments = p.inlineSegments ?? [];
+      expect(segments).toHaveLength(2);
+      const [link, img] = segments;
+      expect(link?.role).toBe("link");
+      expect(link?.name).toBe("リンク");
+      expect(link?.backendNodeId).toBe(11);
+      expect(link?.isFocusable).toBe(true);
+      expect(p.speechText.slice(link!.start, link!.end)).toBe("リンク");
+      expect(img?.role).toBe("img");
+      expect(img?.backendNodeId).toBe(12);
+      expect(p.speechText.slice(img!.start, img!.end)).toBe("画像");
+      // 親行の isFocusable は子のフラグに引きずられない (行自身はフォーカス不可)
+      expect(p.isFocusable).toBe(false);
+    });
+
+    test("インライン子が孫を持つ場合は外側の親は吸収しない", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "p",
+          ignored: false,
+          role: { type: "role", value: "paragraph" },
+          name: { type: "computedString", value: "Hello World and Extra" },
+          childIds: ["a", "code"],
+        }),
+        node({
+          nodeId: "a",
+          parentId: "p",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          name: { type: "computedString", value: "World" },
+          childIds: ["em"],
+        }),
+        node({
+          nodeId: "em",
+          parentId: "a",
+          ignored: false,
+          role: { type: "role", value: "emphasis" },
+          name: { type: "computedString", value: "World" },
+        }),
+        node({
+          nodeId: "code",
+          parentId: "p",
+          ignored: false,
+          role: { type: "role", value: "code" },
+          name: { type: "computedString", value: "Extra" },
+        }),
+      ]);
+      // paragraph は子 link に孫 (emphasis) があるため吸収を見送る。
+      // link 自身は唯一の emphasis 子を吸収してセグメント化する。
+      expect(result[0]!.role).toBe("paragraph");
+      expect(result[0]!.inlineSegments).toBeUndefined();
+      const link = result.find((n) => n.role === "link");
+      expect(link?.inlineSegments).toHaveLength(1);
+      expect(link?.inlineSegments?.[0]?.role).toBe("emphasis");
+    });
+
+    test("ブロック外ロール (navigation) はインライン吸収の対象外", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "nav",
+          ignored: false,
+          role: { type: "role", value: "navigation" },
+          name: { type: "computedString", value: "ホーム 製品" },
+          childIds: ["a1", "a2"],
+        }),
+        node({
+          nodeId: "a1",
+          parentId: "nav",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          name: { type: "computedString", value: "ホーム" },
+        }),
+        node({
+          nodeId: "a2",
+          parentId: "nav",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          name: { type: "computedString", value: "製品" },
+        }),
+      ]);
+      expect(result.map((n) => n.role)).toEqual(["navigation", "link", "link"]);
+      expect(result[0]!.inlineSegments).toBeUndefined();
+    });
+
+    test("インライン子の name が親 speechText に見つからないときは吸収しない", () => {
+      const result = flattenAXTree([
+        node({
+          nodeId: "p",
+          ignored: false,
+          role: { type: "role", value: "paragraph" },
+          name: { type: "computedString", value: "親のテキスト" },
+          childIds: ["a"],
+        }),
+        node({
+          nodeId: "a",
+          parentId: "p",
+          ignored: false,
+          role: { type: "role", value: "link" },
+          // 親 name に含まれない name (alt 属性だけの画像リンク等)
+          name: { type: "computedString", value: "見つからない" },
+        }),
+      ]);
+      expect(result.map((n) => n.role)).toEqual(["paragraph", "link"]);
+      expect(result[0]!.inlineSegments).toBeUndefined();
+    });
+
     test("rowgroup は透過的に子を辿る", () => {
       const result = flattenAXTree([
         node({
