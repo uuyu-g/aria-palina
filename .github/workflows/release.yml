@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Bump versions and push tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+
+    steps:
+      - name: Verify branch is main
+        run: |
+          if [ "${GITHUB_REF_NAME}" != "main" ]; then
+            echo "Release must be run on main (got: ${GITHUB_REF_NAME})" >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump package versions
+        id: bump
+        run: |
+          pnpm -F "./packages/*" exec npm version "${{ inputs.bump }}" --no-git-tag-version
+          VERSION=$(node -p "require('./packages/core/package.json').version")
+          echo "tag=v${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Refresh lockfile
+        run: pnpm install --lockfile-only
+
+      - name: Commit, tag, and push
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          git add packages/core/package.json packages/cli/package.json pnpm-lock.yaml
+          git commit -m "chore(release): ${TAG}"
+          git tag "${TAG}"
+          git push origin HEAD
+          git push origin "${TAG}"
+
+  publish:
+    name: Publish to npm
+    needs: tag
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit
