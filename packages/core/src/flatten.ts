@@ -22,7 +22,7 @@ import {
 } from "./role-classification.js";
 import { buildSpeechText } from "./speech.js";
 import { enrichTableContext } from "./table-context.js";
-import type { A11yNode } from "./types.js";
+import type { A11yNode, InlineSegment } from "./types.js";
 
 /**
  * `properties[]` のうち、`A11yNode.properties` (構造系) として保持したいキー。
@@ -277,6 +277,162 @@ function absorbLoneChild(nodes: A11yNode[]): void {
   }
 }
 
+/**
+ * 親行へ吸収したい「インライン」ロール。
+ *
+ * HTML のインライン要素 (`<a>`, `<span>`, `<strong>`, `<em>`, `<code>`,
+ * `<img>` 等) に対応する ARIA / Chrome AX Tree のロール。ブロック親の
+ * `speechText` に連結されて現れることを前提とする。
+ *
+ * `generic` は透過的に子を辿る (TRANSPARENT_ROLES) が、名前付きで残った
+ * `generic` も `<span>` として扱うためここに含める。
+ */
+const INLINE_ROLES = new Set([
+  "link",
+  "StaticText",
+  "generic",
+  "code",
+  "emphasis",
+  "strong",
+  "mark",
+  "time",
+  "abbreviation",
+  "superscript",
+  "subscript",
+  "deletion",
+  "insertion",
+  "img",
+  "ruby",
+]);
+
+/**
+ * インライン子を吸収して 1 行にまとめる対象となるブロック系ロール。
+ *
+ * 「自身の `name` が子孫テキストを連結したもの」として振る舞うロールに
+ * 限定する。テーブル・ランドマーク等の構造ロールは含めない (構造が消える
+ * と閲覧性を損なうため)。
+ */
+const BLOCK_ABSORB_ROLES = new Set([
+  "paragraph",
+  "heading",
+  "listitem",
+  "cell",
+  "gridcell",
+  "caption",
+  "blockquote",
+  "definition",
+  "DescriptionListTerm",
+  "DescriptionListDetail",
+  "figcaption",
+  "label",
+  "legend",
+  "button",
+  "link",
+  "tab",
+  "menuitem",
+  "option",
+  "treeitem",
+  "generic",
+]);
+
+/**
+ * ブロック親にインライン子がぶら下がっているケースを検出し、子の `name` 範囲を
+ * 親 `speechText` 内のオフセットで記録して `inlineSegments` に格納する。
+ * 対象となった子ノードはフラット配列から取り除く。
+ *
+ * 吸収条件 (`absorbLoneChild` 実行後のフラット配列に対して):
+ *
+ * 1. 親の role が {@link BLOCK_ABSORB_ROLES} のいずれかで `name` が非空。
+ * 2. 親の直接子 (`depth === parent.depth + 1`) が 1 つ以上あり、かつ
+ *    **すべての子孫** が直接子に限る (孫以降は持たない)。
+ * 3. すべての直接子が {@link INLINE_ROLES} のいずれかで、`name` が非空。
+ * 4. 親 `speechText` 内を順方向で走査したとき、各子の `name` が親テキスト中に
+ *    出現順に見つかる (Chrome AX が通常そう計算するため大半のケースで成立)。
+ *
+ * 4 が満たせないケース (子 name が親 name に含まれない画像 alt 等) では吸収を
+ * 行わず、元のツリーをそのまま残す。
+ *
+ * 注: 子に状態や focusable があっても親には伝播しない。代わりに
+ * `inlineSegments[i]` にそのまま保持されるため、TUI 側で Tab ナビゲーション時に
+ * セグメント単位で参照する。
+ */
+function absorbInlineChildren(nodes: A11yNode[]): void {
+  let i = 0;
+  while (i < nodes.length) {
+    const parent = nodes[i]!;
+    if (!BLOCK_ABSORB_ROLES.has(parent.role) || parent.name === "") {
+      i++;
+      continue;
+    }
+
+    // 子孫を全列挙し、直接子だけ取り出す。孫以降がある場合は安全のため吸収を
+    // 諦める (入れ子インラインを扱うには position の再計算が必要で、v1 では
+    // スコープ外とする)。
+    const parentDepth = parent.depth;
+    let descendantEnd = i + 1;
+    const directChildIndices: number[] = [];
+    while (descendantEnd < nodes.length && nodes[descendantEnd]!.depth > parentDepth) {
+      if (nodes[descendantEnd]!.depth === parentDepth + 1) {
+        directChildIndices.push(descendantEnd);
+      }
+      descendantEnd++;
+    }
+    const descendantCount = descendantEnd - (i + 1);
+    if (directChildIndices.length === 0 || descendantCount !== directChildIndices.length) {
+      i++;
+      continue;
+    }
+
+    const allInline = directChildIndices.every((idx) => {
+      const child = nodes[idx]!;
+      return INLINE_ROLES.has(child.role) && child.name.length > 0;
+    });
+    if (!allInline) {
+      i++;
+      continue;
+    }
+
+    // 親 speechText 内で子 name を順方向に検索する。
+    // `speechText` は `[role] name (states)` 形式なので、最低でも role prefix
+    // の長さだけ飛ばした先から探索を始める。
+    const searchStart = parent.speechText.indexOf(parent.name);
+    if (searchStart === -1) {
+      i++;
+      continue;
+    }
+    let cursor = searchStart;
+    const segments: InlineSegment[] = [];
+    let ok = true;
+    for (const idx of directChildIndices) {
+      const child = nodes[idx]!;
+      const pos = parent.speechText.indexOf(child.name, cursor);
+      if (pos === -1) {
+        ok = false;
+        break;
+      }
+      segments.push({
+        role: child.role,
+        name: child.name,
+        backendNodeId: child.backendNodeId,
+        isFocusable: child.isFocusable,
+        state: child.state,
+        properties: child.properties,
+        start: pos,
+        end: pos + child.name.length,
+      });
+      cursor = pos + child.name.length;
+    }
+    if (!ok || segments.length === 0) {
+      i++;
+      continue;
+    }
+
+    parent.inlineSegments = segments;
+    nodes.splice(i + 1, directChildIndices.length);
+    i++;
+  }
+}
+
 /** `flattenAXTree` の動作を制御するオプション。 */
 export interface FlattenOptions {
   /**
@@ -413,6 +569,7 @@ export function flattenAXTree(
   // 名前なし親の唯一の子を親行へ吸収して深いネストを圧縮する
   if (shouldFilter) {
     absorbLoneChild(result);
+    absorbInlineChildren(result);
   }
 
   return result;
