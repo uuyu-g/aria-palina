@@ -9,6 +9,15 @@
  * - table は `enrichTableContext` が付与した `tableRowIndex` /
  *   `tableColIndex` を使って ASCII 罫線で囲んだ表に展開する
  *
+ * リーダビリティ最優先のため、以下の正規化を行う:
+ *
+ * 1. 連続する `paragraph` / `text` / `StaticText` ノードは半角スペースで
+ *    連結して 1 つの段落行にまとめる (`<span>` で文章が分断されるケースの吸収)。
+ * 2. インデントは `list` 系コンテナのネストレベル基準で `listitem` のみに
+ *    付ける。それ以外の行種別 (paragraph / button / link / form-control /
+ *    heading / table) は強制的に `depth=0` にし、ラッパー `<div>` 由来の
+ *    無意味なインデントを潰す。
+ *
  * 純粋関数で副作用なし。出力は `lines` / `nodeToLine` / `lineToNode` /
  * `links` の整合した `TextBrowserModel` を返す。
  */
@@ -37,6 +46,18 @@ const LIST_ITEM_ROLE = "listitem";
 const LINK_ROLE = "link";
 const BUTTON_ROLE = "button";
 
+/**
+ * リスト系コンテナロール。listitem のネストレベル算出に使う。
+ * `listitem` の depth は「自身を内包している list 系ノードの数 - 1」で決まる。
+ */
+const LIST_CONTAINER_ROLES: ReadonlySet<string> = new Set([
+  "list",
+  "listbox",
+  "menu",
+  "menubar",
+  "tree",
+]);
+
 const FORM_CONTROL_ROLES: ReadonlySet<string> = new Set([
   "textbox",
   "combobox",
@@ -48,13 +69,20 @@ const FORM_CONTROL_ROLES: ReadonlySet<string> = new Set([
   "spinbutton",
 ]);
 
+interface OpenContainer {
+  nodeIndex: number;
+  depth: number;
+}
+
 interface BuildContext {
   lines: TextBrowserLine[];
   nodeToLine: number[];
   lineToNode: number[];
   links: TextBrowserLink[];
   /** 開いているランドマークのスタック (LIFO で閉じる)。 */
-  openLandmarks: { role: string; nodeIndex: number; depth: number }[];
+  openLandmarks: (OpenContainer & { role: string })[];
+  /** 開いている list 系コンテナのスタック (listitem の depth 算出に使う)。 */
+  openLists: OpenContainer[];
 }
 
 export function buildTextBrowserLines(nodes: readonly A11yNode[]): TextBrowserModel {
@@ -64,19 +92,31 @@ export function buildTextBrowserLines(nodes: readonly A11yNode[]): TextBrowserMo
     lineToNode: [],
     links: [],
     openLandmarks: [],
+    openLists: [],
   };
 
   let i = 0;
   while (i < nodes.length) {
     const node = nodes[i]!;
 
-    // ランドマーク開閉: depth が「現在開いているランドマークの depth 以下」に
-    // 戻ったら閉じる罫線を出す。LIFO で順番に閉じる。
-    closeFinishedLandmarks(ctx, node.depth);
+    // ランドマーク・リスト開閉: depth が「現在開いているコンテナの depth 以下」に
+    // 戻ったら閉じる。LIFO で順番に閉じる。
+    closeFinishedContainers(ctx, node.depth);
 
     if (LANDMARK_ROLES.has(node.role)) {
       pushLine(ctx, { kind: "landmark-start", role: node.role, nodeIndex: i }, i);
       ctx.openLandmarks.push({ role: node.role, nodeIndex: i, depth: node.depth });
+      i++;
+      continue;
+    }
+
+    if (LIST_CONTAINER_ROLES.has(node.role)) {
+      // list 系コンテナ自体は行として出さず、開きスタックにだけ積む。
+      // 中身の listitem の depth を決めるためのトラッキング用。
+      ctx.openLists.push({ nodeIndex: i, depth: node.depth });
+      // nodeToLine は「最も近い後続行」に紐付けたいので一旦未設定にし、
+      // 後続の listitem などが pushLine した際に nodeToLine が埋まる仕組みに
+      // 任せる。コンテナ自体を Tab 等で指す必要はない。
       i++;
       continue;
     }
@@ -111,7 +151,7 @@ export function buildTextBrowserLines(nodes: readonly A11yNode[]): TextBrowserMo
           kind: "button",
           label: node.name,
           nodeIndex: i,
-          depth: node.depth,
+          depth: 0,
         },
         i,
       );
@@ -128,7 +168,7 @@ export function buildTextBrowserLines(nodes: readonly A11yNode[]): TextBrowserMo
           label: node.name,
           stateText: formatStateText(node),
           nodeIndex: i,
-          depth: node.depth,
+          depth: 0,
         },
         i,
       );
@@ -137,20 +177,21 @@ export function buildTextBrowserLines(nodes: readonly A11yNode[]): TextBrowserMo
     }
 
     if (PARAGRAPH_ROLES.has(node.role) || TEXT_ROLES.has(node.role)) {
-      emitParagraph(ctx, node, i, "paragraph");
-      i++;
+      // 連続する text 系ノードを 1 段落にマージする。`<p>` 内の `<span>`
+      // 連発などで文章が分断されるケースを吸収する。
+      i = emitMergedParagraph(ctx, nodes, i);
       continue;
     }
 
     // フォールバック: 不明ロールは speechText を素のままパラグラフとして出す。
     // 取りこぼしを防ぐための保険であり、明示的な行種別を増やす必要がある場合は
     // 上の分岐を拡張する。
-    emitParagraph(ctx, node, i, "paragraph");
+    emitParagraph(ctx, node, i);
     i++;
   }
 
   // 走査終了時にまだ開いているランドマークを全部閉じる。
-  closeFinishedLandmarks(ctx, -1);
+  closeFinishedContainers(ctx, -1);
 
   return {
     lines: ctx.lines,
@@ -171,9 +212,8 @@ function pushLine(ctx: BuildContext, line: TextBrowserLine, nodeIndex: number): 
   }
 }
 
-function closeFinishedLandmarks(ctx: BuildContext, currentDepth: number): void {
-  // currentDepth が「直近のランドマーク depth 以下」のあいだ閉じる。
-  // 走査終了時は currentDepth=-1 を渡すことで全件閉じられる。
+function closeFinishedContainers(ctx: BuildContext, currentDepth: number): void {
+  // ランドマークは閉じる時点で `landmark-end` 罫線を出力する。
   while (ctx.openLandmarks.length > 0) {
     const top = ctx.openLandmarks[ctx.openLandmarks.length - 1]!;
     if (currentDepth > top.depth) break;
@@ -184,6 +224,17 @@ function closeFinishedLandmarks(ctx: BuildContext, currentDepth: number): void {
       top.nodeIndex,
     );
   }
+  // list 系コンテナは行を出さずスタック管理だけ行う。
+  while (ctx.openLists.length > 0) {
+    const top = ctx.openLists[ctx.openLists.length - 1]!;
+    if (currentDepth > top.depth) break;
+    ctx.openLists.pop();
+  }
+}
+
+function listNestDepth(ctx: BuildContext): number {
+  // 開いている list が無いとき (loose な listitem) も depth=0 とする。
+  return Math.max(0, ctx.openLists.length - 1);
 }
 
 function emitHeading(ctx: BuildContext, node: A11yNode, index: number): void {
@@ -209,7 +260,7 @@ function emitListItem(ctx: BuildContext, node: A11yNode, index: number): void {
       kind: "list-item",
       segments,
       nodeIndex: index,
-      depth: node.depth,
+      depth: listNestDepth(ctx),
     },
     index,
   );
@@ -229,24 +280,95 @@ function emitStandaloneLink(ctx: BuildContext, node: A11yNode, index: number): v
       linkIndex,
       text: node.name,
       nodeIndex: index,
-      depth: node.depth,
+      depth: 0,
     },
     index,
   );
 }
 
-function emitParagraph(ctx: BuildContext, node: A11yNode, index: number, kind: "paragraph"): void {
+function emitParagraph(ctx: BuildContext, node: A11yNode, index: number): void {
   const segments = buildSegments(ctx, node, index);
   pushLine(
     ctx,
     {
-      kind,
+      kind: "paragraph",
       segments,
       nodeIndex: index,
-      depth: node.depth,
+      depth: 0,
     },
     index,
   );
+}
+
+/**
+ * 連続する `paragraph` / `text` / `StaticText` ノードを 1 つの段落行にまとめる。
+ * 各ノードの本文を半角スペースで連結し、`inlineSegments` のリンク採番も
+ * 流れる順序のまま 1 つの `RenderSegment[]` に統合する。
+ *
+ * 戻り値はマージした次に走査すべきインデックス (= 連続範囲の終端 + 1)。
+ *
+ * `nodeToLine` は連続範囲の各 nodeIndex を同じ line に紐付ける。`lineToNode`
+ * は先頭 nodeIndex を代表として記録する。
+ */
+function emitMergedParagraph(
+  ctx: BuildContext,
+  nodes: readonly A11yNode[],
+  startIdx: number,
+): number {
+  let endIdx = startIdx;
+  while (endIdx < nodes.length) {
+    const n = nodes[endIdx]!;
+    if (PARAGRAPH_ROLES.has(n.role) || TEXT_ROLES.has(n.role)) {
+      endIdx++;
+    } else {
+      break;
+    }
+  }
+
+  const merged: RenderSegment[] = [];
+  for (let k = startIdx; k < endIdx; k++) {
+    const segs = buildSegments(ctx, nodes[k]!, k);
+    if (segs.length === 0) continue;
+    if (merged.length > 0) {
+      mergeText(merged, " ");
+    }
+    for (const s of segs) appendSegment(merged, s);
+  }
+
+  const lineIndex = ctx.lines.length;
+  ctx.lines.push({
+    kind: "paragraph",
+    segments: merged,
+    nodeIndex: startIdx,
+    depth: 0,
+  });
+  ctx.lineToNode.push(startIdx);
+  for (let k = startIdx; k < endIdx; k++) {
+    if (ctx.nodeToLine[k] === -1) ctx.nodeToLine[k] = lineIndex;
+  }
+  return endIdx;
+}
+
+/**
+ * 末尾セグメントが text なら追記、そうでなければ新しい text セグメントを追加する。
+ * 段落マージ時の区切りスペース挿入で text セグメントが過剰に増えないよう調整する。
+ */
+function mergeText(segments: RenderSegment[], text: string): void {
+  const last = segments[segments.length - 1];
+  if (last && last.kind === "text") {
+    segments[segments.length - 1] = { kind: "text", text: last.text + text };
+  } else {
+    segments.push({ kind: "text", text });
+  }
+}
+
+/** セグメントを追加する。text なら隣接 text と統合し、link はそのまま並べる。 */
+function appendSegment(segments: RenderSegment[], seg: RenderSegment): void {
+  if (seg.kind === "text") {
+    mergeText(segments, seg.text);
+  } else {
+    segments.push(seg);
+  }
 }
 
 /**

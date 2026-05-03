@@ -203,6 +203,74 @@ After (textbrowser):
 +-------+-------+
 ```
 
+## 追加改善 (PR #51 レビューフィードバック対応)
+
+レビューで以下の 3 点が指摘されたため追加対応を行った。
+
+> 1. span で文章が途切れるからまとめて
+> 2. ネスト構造がそのまま残ってると読みづらい
+> 3. リーダビリティを優先して
+
+### A. 連続テキストノードのマージ
+
+`paragraph` / `text` / `StaticText` ロールが連続するノード列を、半角スペース
+区切りで 1 つの `paragraph` 行にまとめるように `buildTextBrowserLines` を変更。
+`<p>` の中に `<span>` が連発されて段落が分断されるケースを吸収する。
+連続範囲の各 `nodeIndex` は同じ line に紐付く (`nodeToLine` が同一値を指す)。
+
+### B. depth 正規化
+
+ラッパー `<div>` 由来の無意味なインデントを潰すため、行種別ごとに depth を
+強制設定する:
+
+| 行種別                                     | depth                                                        |
+| ------------------------------------------ | ------------------------------------------------------------ |
+| `paragraph` / `link` / `button` / `form-control` | 常に `0`                                              |
+| `heading` / `landmark-start` / `landmark-end`    | (フィールドなし、罫線/見出し記号で構造表現)            |
+| `list-item`                                      | 直近の `list` 系コンテナのネストレベル基準 (`openLists.length - 1`) |
+
+`list` / `listbox` / `menu` / `menubar` / `tree` を `LIST_CONTAINER_ROLES` と
+して認識し、開閉スタックで listitem の depth を算出する。loose な
+(`list` 配下に無い) `listitem` は depth=0 になる。
+
+### Before / After (改善版描画)
+
+PR #51 の初回コミット (Before) は元の `node.depth` をそのままインデントに
+使っていたため、ラッパー由来の不自然なインデントが多かった。
+
+改善後:
+
+```
+── banner ──
+── navigation ──
+[1]Home [2]About
+── /navigation ──
+── /banner ──
+── main ──
+# Welcome
+Hello [3]help world.
+- foo
+- bar
+[textbox: q]
+[Button: 送信]
+── /main ──
+```
+
+- インデントは listitem の `- foo` / `- bar` のみ depth 由来 (今回はトップレベル list なので 0)。ネストリストの場合のみ 2 段目以降がインデントされる
+- `<span>Hello </span><a>help</a><span> world.</span>` のような分断構造でも 1 段落にまとめる
+- form-control / button / link は元 `node.depth` に関係なくフラットに左寄せ
+
+### 追加テストケース
+
+- `button / form-control / link は元 depth に関係なく depth=0 でフラットに出る`
+- `list 配下の listitem はネスト 1 段で depth=0、入れ子リストは depth=1 になる`
+- `list コンテナ外の loose な listitem は depth=0 になる`
+- `連続する text/StaticText ノードは半角スペース区切りで 1 段落にマージされる`
+- `マージ対象の合間に構造ノード (heading) が入ると段落が分割される`
+
+最終結果: `vp test` 24 files / **321 tests passed**、`vp check` クリーン、
+`vp run -F './packages/*' build` 緑。
+
 ## 将来の拡張余地
 
 - リンク番号入力でジャンプ (`TextBrowserModel.links` のサイドテーブルが既に揃っている)
@@ -211,3 +279,4 @@ After (textbrowser):
   textbrowser モードを `Renderer` インターフェースの 1 実装として再構成可能
 - カーソルを line インデックス軸へ切り替え、テーブル中途行 (border 行等) も
   選択できるようにする
+- 段落マージの境界条件をさらに調整 (例: 連続する `link` ノードを `[1]A [2]B` のように 1 行にまとめる)

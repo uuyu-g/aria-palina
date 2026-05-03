@@ -140,7 +140,7 @@ describe("buildTextBrowserLines", () => {
     }
   });
 
-  test("button / form-control はそれぞれ専用行種別で出る", () => {
+  test("button / form-control / link は元 depth に関係なく depth=0 でフラットに出る", () => {
     const nodes: A11yNode[] = [
       makeNode({
         backendNodeId: 1,
@@ -148,6 +148,7 @@ describe("buildTextBrowserLines", () => {
         name: "送信",
         speechText: "[button] 送信",
         isFocusable: true,
+        depth: 5,
       }),
       makeNode({
         backendNodeId: 2,
@@ -155,6 +156,7 @@ describe("buildTextBrowserLines", () => {
         name: "q",
         speechText: "[textbox] q",
         isFocusable: true,
+        depth: 4,
       }),
       makeNode({
         backendNodeId: 3,
@@ -163,6 +165,15 @@ describe("buildTextBrowserLines", () => {
         speechText: "[checkbox] 通知 (未チェック)",
         isFocusable: true,
         state: { checked: false },
+        depth: 6,
+      }),
+      makeNode({
+        backendNodeId: 4,
+        role: "link",
+        name: "Home",
+        speechText: "[link] Home",
+        isFocusable: true,
+        depth: 7,
       }),
     ];
     const model = buildTextBrowserLines(nodes);
@@ -188,19 +199,29 @@ describe("buildTextBrowserLines", () => {
       nodeIndex: 2,
       depth: 0,
     });
+    expect(model.lines[3]).toMatchObject({ kind: "link", depth: 0 });
   });
 
-  test("listitem は list-item 行として depth 付きで出る", () => {
+  test("list 配下の listitem はネスト 1 段で depth=0、入れ子リストは depth=1 になる", () => {
     const nodes: A11yNode[] = [
+      makeNode({ backendNodeId: 1, role: "list", name: "", speechText: "[list]", depth: 0 }),
       makeNode({
-        backendNodeId: 1,
+        backendNodeId: 2,
         role: "listitem",
         name: "foo",
         speechText: "[listitem] foo",
         depth: 1,
       }),
+      makeNode({ backendNodeId: 3, role: "list", name: "", speechText: "[list]", depth: 1 }),
       makeNode({
-        backendNodeId: 2,
+        backendNodeId: 4,
+        role: "listitem",
+        name: "foo-1",
+        speechText: "[listitem] foo-1",
+        depth: 2,
+      }),
+      makeNode({
+        backendNodeId: 5,
         role: "listitem",
         name: "bar",
         speechText: "[listitem] bar",
@@ -208,18 +229,95 @@ describe("buildTextBrowserLines", () => {
       }),
     ];
     const model = buildTextBrowserLines(nodes);
+    const items = model.lines.filter((l) => l.kind === "list-item");
+    expect(items).toEqual([
+      { kind: "list-item", segments: [{ kind: "text", text: "foo" }], nodeIndex: 1, depth: 0 },
+      { kind: "list-item", segments: [{ kind: "text", text: "foo-1" }], nodeIndex: 3, depth: 1 },
+      { kind: "list-item", segments: [{ kind: "text", text: "bar" }], nodeIndex: 4, depth: 0 },
+    ]);
+  });
+
+  test("list コンテナ外の loose な listitem は depth=0 になる", () => {
+    const nodes: A11yNode[] = [
+      makeNode({
+        backendNodeId: 1,
+        role: "listitem",
+        name: "loose",
+        speechText: "[listitem] loose",
+        depth: 3,
+      }),
+    ];
+    const model = buildTextBrowserLines(nodes);
     expect(model.lines[0]).toEqual({
       kind: "list-item",
-      segments: [{ kind: "text", text: "foo" }],
+      segments: [{ kind: "text", text: "loose" }],
       nodeIndex: 0,
-      depth: 1,
+      depth: 0,
     });
-    expect(model.lines[1]).toEqual({
-      kind: "list-item",
-      segments: [{ kind: "text", text: "bar" }],
-      nodeIndex: 1,
-      depth: 1,
+  });
+
+  test("連続する text/StaticText ノードは半角スペース区切りで 1 段落にマージされる", () => {
+    const nodes: A11yNode[] = [
+      makeNode({
+        backendNodeId: 1,
+        role: "StaticText",
+        name: "Hello",
+        speechText: "[StaticText] Hello",
+        depth: 1,
+      }),
+      makeNode({
+        backendNodeId: 2,
+        role: "StaticText",
+        name: "world",
+        speechText: "[StaticText] world",
+        depth: 1,
+      }),
+      makeNode({
+        backendNodeId: 3,
+        role: "paragraph",
+        name: "今日は良い天気です",
+        speechText: "[paragraph] 今日は良い天気です",
+        depth: 1,
+      }),
+    ];
+    const model = buildTextBrowserLines(nodes);
+    expect(model.lines).toHaveLength(1);
+    expect(model.lines[0]).toEqual({
+      kind: "paragraph",
+      segments: [{ kind: "text", text: "Hello world 今日は良い天気です" }],
+      nodeIndex: 0,
+      depth: 0,
     });
+    // 連続ノードはすべて同じ line に紐付く
+    expect(model.nodeToLine).toEqual([0, 0, 0]);
+  });
+
+  test("マージ対象の合間に構造ノード (heading) が入ると段落が分割される", () => {
+    const nodes: A11yNode[] = [
+      makeNode({
+        backendNodeId: 1,
+        role: "StaticText",
+        name: "before",
+        speechText: "[StaticText] before",
+      }),
+      makeNode({
+        backendNodeId: 2,
+        role: "heading",
+        name: "Mid",
+        speechText: "[heading2] Mid",
+        properties: { level: 2 },
+      }),
+      makeNode({
+        backendNodeId: 3,
+        role: "StaticText",
+        name: "after",
+        speechText: "[StaticText] after",
+      }),
+    ];
+    const model = buildTextBrowserLines(nodes);
+    expect(model.lines.map((l) => l.kind)).toEqual(["paragraph", "heading", "paragraph"]);
+    expect(model.lines[0]).toMatchObject({ segments: [{ kind: "text", text: "before" }] });
+    expect(model.lines[2]).toMatchObject({ segments: [{ kind: "text", text: "after" }] });
   });
 
   test("table は top → header → mid → body × N → bottom の順で罫線が並ぶ", () => {
