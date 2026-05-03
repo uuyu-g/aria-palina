@@ -128,6 +128,7 @@ $ palina --tui --headed --url http://localhost:3000
 | `Esc` | フィルタ中 | フィルタを解除して通常モードへ戻る |
 | `Enter` | アクション | 現在カーソル下の要素をクリック（`button` / `link` / `menuitem` / `tab` / `option` 等）。クリック後は `✱ クリック: <label>` がフッターに表示される |
 | `Space` | アクション | 現在カーソル下の要素をトグル（`checkbox` / `radio` / `switch` / `button`）。内部的には Enter と同じく CDP クリックとして発火 |
+| `t` | ビュー | テキストブラウザ（Lynx/w3m 風）と raw アクセシビリティツリーを切り替え |
 | `Q` または `Ctrl+C` | システム | TUI を終了し、バックグラウンドのブラウザを閉じる |
 
 > **フィルタモード**: `h` / `d` を単独で押すと、マッチしないノードは一覧から隠れ、
@@ -141,6 +142,27 @@ $ palina --tui --headed --url http://localhost:3000
 > 同じ要素へ復元されます。ヘッドレス (`--headed` なし) で実行した場合は操作結果が
 > 目視できないため、初回操作時にフッターへ `[headless] 操作結果は --headed で視認可能`
 > と 1 度だけ警告が表示されます。
+
+#### 🌐 テキストブラウザビュー (`--view=textbrowser`)
+
+`palina --tui` の起動時の既定ビューは **テキストブラウザモード** です。Lynx /
+w3m 風に、ランドマーク境界を `── main ──` の罫線で囲い、見出しは `#` /
+`##` / `###` で強調、リンクは `[1]リンクテキスト` のようにページ内通し番号で
+表示します。テーブルは ASCII 罫線で囲んだ表として描画されます。
+
+`t` キーを押すたびに raw（従来のアクセシビリティツリー表示）と切り替えできます。
+
+```bash
+# 起動時から raw ビューを使う
+$ palina --tui --view=raw https://example.com
+
+# 起動時から textbrowser ビュー (省略可、これがデフォルト)
+$ palina --tui --view=textbrowser https://example.com
+```
+
+CLI ワンショット出力 (`palina <url>`) と JSON 出力 (`--format=json`) はこの
+オプションの影響を受けず、従来どおり `[role] name (state)` 形式の
+NVDA 風テキストを返します。
 
 ## 2. Chrome DevTools 拡張機能
 

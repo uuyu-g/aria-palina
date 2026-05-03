@@ -46,6 +46,7 @@ export interface NormalContext {
   openModal: (kind: NodeKind) => void;
   refreshNodes: () => void;
   toggleLive: () => void;
+  toggleViewMode: () => void;
   triggerEnter: () => void;
   triggerSpace: () => void;
 }
@@ -119,6 +120,7 @@ export const NORMAL_BINDINGS: readonly Binding<NormalContext>[] = [
     action: ({ refreshNodes }) => refreshNodes(),
   },
   { match: { input: "L" }, action: ({ toggleLive }) => toggleLive() },
+  { match: { input: "t" }, action: ({ toggleViewMode }) => toggleViewMode() },
   { match: { key: "return" }, action: ({ triggerEnter }) => triggerEnter() },
   { match: { input: " " }, action: ({ triggerSpace }) => triggerSpace() },
 ];

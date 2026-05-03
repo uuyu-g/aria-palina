@@ -1042,6 +1042,58 @@ describe("App highlight controller", () => {
     unmount();
   });
 
+  test("initialViewMode=textbrowser で起動するとランドマーク罫線が描画される", async () => {
+    const nodes: A11yNode[] = [
+      makeNode({ backendNodeId: 1, role: "main", name: "", speechText: "[main]", depth: 0 }),
+      makeNode({
+        backendNodeId: 2,
+        role: "heading",
+        name: "Welcome",
+        speechText: "[heading1] Welcome",
+        properties: { level: 1 },
+        depth: 1,
+      }),
+    ];
+    const { lastFrame, unmount } = render(
+      <App url="https://x.com" nodes={nodes} viewportOverride={10} initialViewMode="textbrowser" />,
+    );
+    await waitFrames();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("── main ──");
+    expect(frame).toContain("# Welcome");
+    unmount();
+  });
+
+  test("t キーで textbrowser ↔ raw を切り替えられる", async () => {
+    const nodes: A11yNode[] = [
+      makeNode({ backendNodeId: 1, role: "main", name: "", speechText: "[main]", depth: 0 }),
+      makeNode({
+        backendNodeId: 2,
+        role: "heading",
+        name: "Hi",
+        speechText: "[heading1] Hi",
+        properties: { level: 1 },
+        depth: 1,
+      }),
+    ];
+    const { lastFrame, stdin, unmount } = render(
+      <App url="https://x.com" nodes={nodes} viewportOverride={10} initialViewMode="raw" />,
+    );
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("[heading1] Hi"); // raw
+
+    stdin.write("t");
+    await waitFrames();
+    const tbFrame = lastFrame() ?? "";
+    expect(tbFrame).toContain("# Hi"); // textbrowser
+    expect(tbFrame).toContain("── main ──");
+
+    stdin.write("t");
+    await waitFrames();
+    expect(lastFrame() ?? "").toContain("[heading1] Hi"); // raw に戻る
+    unmount();
+  });
+
   test("assertive な live 変更はステータスバーに ! 付きで表示される", async () => {
     const nodes = makeNodes(2);
     let listener: ((u: import("../tui/run.js").LiveUpdate) => void) | null = null;

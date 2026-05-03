@@ -23,3 +23,12 @@ export {
   type HighlightController,
   type UseHighlightOptions,
 } from "./use-highlight.js";
+export { TextBrowserList, type TextBrowserListProps } from "./components/TextBrowserList.js";
+export { TextBrowserRow, type TextBrowserRowProps } from "./components/TextBrowserRow.js";
+export { buildTextBrowserLines } from "./textbrowser/build.js";
+export type {
+  RenderSegment,
+  TextBrowserLine,
+  TextBrowserLink,
+  TextBrowserModel,
+} from "./textbrowser/types.js";

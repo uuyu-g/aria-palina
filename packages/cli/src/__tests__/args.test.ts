@@ -23,6 +23,7 @@ describe("parseCliArgs", () => {
         waitForFunction: undefined,
         delay: 0,
         live: true,
+        view: "textbrowser",
       },
     });
   });
@@ -412,6 +413,31 @@ describe("parseCliArgs", () => {
       ok: false,
       exitCode: 2,
       message: expect.stringContaining("同時に指定できません"),
+    });
+  });
+
+  test("--view textbrowser がデフォルト値として返る", () => {
+    const result = parseCliArgs(["-u", "https://x.com"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ view: "textbrowser" }),
+    });
+  });
+
+  test("--view raw を指定すると view が raw になる", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--view", "raw"]);
+    expect(result).toEqual({
+      ok: true,
+      args: expect.objectContaining({ view: "raw" }),
+    });
+  });
+
+  test("不正な --view 値はエラー (exit 2) になる", () => {
+    const result = parseCliArgs(["-u", "https://x.com", "--view", "lynx"]);
+    expect(result).toEqual({
+      ok: false,
+      exitCode: 2,
+      message: expect.stringContaining("--view"),
     });
   });
 });

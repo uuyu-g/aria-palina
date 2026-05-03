@@ -33,6 +33,8 @@ const HELP_TEXT = `palina — ページのアクセシビリティツリーを N
       --wait-for-function <js>    ページ内 eval 真偽関数で追加で待機
       --delay <ms>                抽出前の固定スリープ (エスケープハッチ)
       --no-live      TUI モードで DOM 変化による自動再取得を無効化
+      --view <mode>  TUI のビューモード: "raw" (アクセシビリティツリー)
+                     | "textbrowser" (Lynx/w3m 風) (デフォルト: textbrowser)
   -h, --help         このヘルプを表示
   -V, --version      バージョンを表示
 
@@ -62,6 +64,7 @@ export interface CliArgs {
   waitForFunction: string | undefined;
   delay: number;
   live: boolean;
+  view: "raw" | "textbrowser";
 }
 
 const ROLE_ALIASES: Record<string, string[]> = {
@@ -99,6 +102,7 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
         delay: { type: "string", default: "0" },
         live: { type: "boolean" },
         "no-live": { type: "boolean" },
+        view: { type: "string", default: "textbrowser" },
         help: { type: "boolean", short: "h", default: false },
         version: { type: "boolean", short: "V", default: false },
       },
@@ -190,6 +194,9 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
   );
   if (!indentResult.ok) return { ok: false, exitCode: 2, message: indentResult.error };
 
+  const viewResult = validateEnumOption(values.view as string, "--view", ["raw", "textbrowser"]);
+  if (!viewResult.ok) return { ok: false, exitCode: 2, message: viewResult.error };
+
   const colorResult = validateTriStateFlag(
     values.color as boolean | undefined,
     values["no-color"] as boolean | undefined,
@@ -226,6 +233,7 @@ export function parseCliArgs(argv: readonly string[]): ParseResult {
       waitForFunction,
       delay: delayResult.value,
       live,
+      view: viewResult.value,
     },
   };
 }

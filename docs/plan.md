@@ -29,6 +29,7 @@
 | 5 | デュアルナビゲーション実装 (TUI) | ✅ Done | [phase-5](./progress/phase-5.md) |
 | 6 | Matrix View (Headed モード同期) | ✅ Done | [phase-6](./progress/phase-6.md) |
 | 6.5 | リーダブルビュー (中間表現 + レンダラー切替) | ⏳ Pending | — |
+| 6.6 | TUI テキストブラウザビュー (Lynx/w3m 風) | ✅ Done | [phase-6.6](./progress/phase-6.6.md) |
 | 7 | Chrome Extension (DevTools Panel) | ⏳ Pending | — |
 | 8 | Test Utilities (BDD) | ⏳ Pending | — |
 | 9 | 統合バイナリ `palina` の公開 | ⏳ Pending | — |
@@ -80,6 +81,12 @@
 **Phase 7 との関係**: Chrome Extension でも同じビューが欲しくなるため、変換ロジックは
 必ず Core 側 (`buildReaderView`) に置き、Extension パッケージ追加時にそのまま再利用
 できるようにする。
+
+### Phase 6.6: TUI テキストブラウザビュー (Lynx/w3m 風) — ✅ Done
+
+> Phase 6.5 とは独立した追加モード。中間表現は導入せず、TUI 限定で
+> Lynx / w3m 風のリーダブル描画を提供する。詳細は
+> [phase-6.6 done record](./progress/phase-6.6.md) を参照。
 
 ### Phase 7: Chrome Extension (DevTools Panel)
 

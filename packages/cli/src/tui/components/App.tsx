@@ -27,9 +27,13 @@ import {
 } from "../keybindings.js";
 import { KIND_LABEL } from "../kind-label.js";
 import type { ActionBridge, LiveBridge, LiveUpdate } from "../run.js";
+import { buildTextBrowserLines } from "../textbrowser/build.js";
 import { useHighlight, type HighlightController } from "../use-highlight.js";
 import { FilterModal } from "./FilterModal.js";
+import { TextBrowserList } from "./TextBrowserList.js";
 import { VirtualList } from "./VirtualList.js";
+
+export type ViewMode = "raw" | "textbrowser";
 
 export interface AppProps {
   url: string;
@@ -61,6 +65,16 @@ export interface AppProps {
    * 警告を 1 度だけフッターに表示する。
    */
   headless?: boolean;
+  /**
+   * 起動時のビューモード。`"raw"` は従来のアクセシビリティツリー、
+   * `"textbrowser"` は Lynx/w3m 風のリーダブルビュー。`t` キーで切替可能。
+   *
+   * `App` 単体のデフォルトは `raw` (テスト互換性のため)。
+   * CLI から `runTui` 経由で起動した場合は `--view` フラグの値 (既定
+   * `textbrowser`) が渡される。
+   * @default "raw"
+   */
+  initialViewMode?: ViewMode;
 }
 
 const HEADER_LINES = 1;
@@ -72,7 +86,7 @@ const MIN_VIEWPORT = 3;
 const MODAL_CHROME_LINES = 4; // border top + title + help + border bottom
 
 const FOOTER_NORMAL =
-  "↑/↓ 移動 Tab フォーカス h 見出し d ランドマーク Enter クリック Space トグル g/G 先頭末尾 r 再取得 L ライブ q 終了";
+  "↑/↓ 移動 Tab フォーカス h 見出し d ランドマーク Enter クリック Space トグル g/G 先頭末尾 r 再取得 L ライブ t ビュー q 終了";
 
 /** live 通知の自動消滅までの ms。 */
 const LIVE_STATUS_TTL = 4_000;
@@ -135,6 +149,7 @@ export function App({
   liveBridge = null,
   actionBridge = null,
   headless = false,
+  initialViewMode = "raw",
 }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -151,6 +166,7 @@ export function App({
     liveBridge ? liveBridge.isLiveEnabled() : false,
   );
   const [liveStatus, setLiveStatus] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode);
   const headlessWarnedRef = useRef(false);
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
@@ -240,6 +256,16 @@ export function App({
     }
     return { filteredNodes: filtered, filteredToFull: mapping };
   }, [nodes, modalKind]);
+
+  // テキストブラウザモード用の行モデル。raw モードでも JSX 評価コストは発生する
+  // が、`buildTextBrowserLines` は純粋関数で nodes 参照が同一なら useMemo が
+  // 再計算を抑える。`r`/`L` で nodes が差し替わったタイミングで自動再計算される。
+  const textBrowserModel = useMemo(() => buildTextBrowserLines(nodes), [nodes]);
+  const textBrowserCursor = useMemo(() => {
+    const lineIdx = textBrowserModel.nodeToLine[cursor];
+    if (lineIdx === undefined || lineIdx < 0) return 0;
+    return lineIdx;
+  }, [textBrowserModel, cursor]);
 
   // モーダル内カーソル (filteredNodes 内のインデックス)
   const modalCursor = useMemo(() => {
@@ -376,6 +402,13 @@ export function App({
           setLiveStatus(enabled ? "⟳ ライブ更新 ON" : "⏸ ライブ更新 OFF");
         });
       },
+      toggleViewMode: () => {
+        setViewMode((prev) => {
+          const next = prev === "raw" ? "textbrowser" : "raw";
+          setLiveStatus(next === "textbrowser" ? "👁 ビュー: textbrowser" : "👁 ビュー: raw");
+          return next;
+        });
+      },
       triggerEnter: () => triggerAction(ENTER_ROLES),
       triggerSpace: () => triggerAction(SPACE_ROLES),
     };
@@ -419,6 +452,17 @@ export function App({
           cursor={modalCursor}
           viewport={modalViewport}
         />
+      ) : viewMode === "textbrowser" ? (
+        <>
+          <TextBrowserList
+            model={textBrowserModel}
+            cursor={textBrowserCursor}
+            viewport={viewport}
+          />
+          <Box>
+            <Text dimColor>{FOOTER_NORMAL}</Text>
+          </Box>
+        </>
       ) : (
         <>
           <VirtualList

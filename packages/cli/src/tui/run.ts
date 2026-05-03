@@ -47,6 +47,11 @@ export interface TuiArgs {
   delay?: number;
   /** DOM 変化での自動再取得を有効にするか。@default true */
   live?: boolean;
+  /**
+   * 起動時のビューモード。`"raw"` は従来のアクセシビリティツリー、
+   * `"textbrowser"` は Lynx/w3m 風のリーダブルビュー。@default "textbrowser"
+   */
+  view?: "raw" | "textbrowser";
 }
 
 /**
@@ -338,6 +343,7 @@ export async function runTui(args: TuiArgs, io: TuiIO): Promise<number> {
       highlightController,
       actionBridge,
       headless: !args.headed,
+      initialViewMode: args.view ?? "textbrowser",
     });
 
     const instance = await renderer(element, {
